@@ -1,0 +1,17 @@
+{
+  "name": "gameplayfootball",
+  "version-string": "0.4.0",
+  "builtin-baseline": "4f8fe05871555c1798dbcb1957d0d595e94f7b57",
+  "dependencies": [
+    "sdl2",
+    {
+      "name": "sdl2-image",
+      "features": ["libjpeg-turbo"]
+    },
+    "sdl2-ttf",
+    "sdl2-gfx",
+    "openal-soft",
+    "opengl",
+    "sqlite3"
+  ]
+}

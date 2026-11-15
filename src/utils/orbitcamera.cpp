@@ -16,9 +16,9 @@
 
 namespace blunted {
 
-  OrbitCamera::OrbitCamera(boost::shared_ptr<Scene3D> scene3D, const Vector3 &position) : time(0) {
+  OrbitCamera::OrbitCamera(std::shared_ptr<Scene3D> scene3D, const Vector3 &position) : time(0) {
 
-    boost::intrusive_ptr<Camera> tmpOrbitCamera(new Camera("supervette cam"));
+    blunted::intrusive_ptr<Camera> tmpOrbitCamera(new Camera("supervette cam"));
     orbitCamera = tmpOrbitCamera;
     scene3D->CreateSystemObjects(orbitCamera);
 
@@ -31,7 +31,7 @@ namespace blunted {
 
   orbitCamera->SetFOV(42);
 
-    boost::intrusive_ptr<Node> tmpNode(new Node("OrbitCamera control node"));
+    blunted::intrusive_ptr<Node> tmpNode(new Node("OrbitCamera control node"));
     orbitCameraNode = tmpNode;
     orbitCameraNode->AddObject(orbitCamera);
     orbitCameraNode->SetPosition(position);
@@ -50,7 +50,7 @@ namespace blunted {
     orbitCameraNode.reset();
   }
 
-  boost::intrusive_ptr<Node> OrbitCamera::GetCameraNode() {
+  blunted::intrusive_ptr<Node> OrbitCamera::GetCameraNode() {
     return orbitCameraNode;
   }
 

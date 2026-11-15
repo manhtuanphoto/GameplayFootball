@@ -9,6 +9,7 @@
 #include "settings.hpp"
 #include "controllerselect.hpp"
 #include "startmatch/teamselect.hpp"
+#include "startmatch/sandbox.hpp"
 #include "startmatch/matchoptions.hpp"
 #include "startmatch/loadingmatch.hpp"
 #include "ingame/gamepage.hpp"
@@ -70,6 +71,14 @@ Gui2Page *PageFactory::CreatePage(const Gui2PageData &pageData) {
 
     case e_PageID_TeamSelect:
       page = new TeamSelectPage(windowManager, pageData);
+      break;
+
+    case e_PageID_Sandbox:
+      page = new SandboxPage(windowManager, pageData);
+      break;
+
+    case e_PageID_FreeKick:
+      page = new FreeKickPage(windowManager, pageData);
       break;
 
     case e_PageID_MatchOptions:
@@ -303,6 +312,26 @@ Gui2Page *PageFactory::CreatePage(const Gui2PageData &pageData) {
   }
 
   if (page != 0) {
+    if (pageData.pageID != e_PageID_Game &&
+        pageData.pageID != e_PageID_Intro &&
+        pageData.pageID != e_PageID_Outro &&
+        pageData.pageID != e_PageID_LoadingMatch) {
+      Gui2Image *menuHintBg = new Gui2Image(windowManager, "image_menu_hotkey_bg_" + int_to_str(pageData.pageID), 12.0f, 95.6f, 76.0f, 3.4f);
+      menuHintBg->LoadImage("media/menu/backgrounds/black.png");
+      page->AddView(menuHintBg);
+      menuHintBg->Show();
+
+      std::string menuHintText = "[Arrows] Navigate   |   [Enter / S] Select   |   [Esc / W] Back   |   [Left / Right] Adjust Option";
+      Gui2Caption *menuHintCap = new Gui2Caption(windowManager, "caption_menu_hotkey_" + int_to_str(pageData.pageID), 0, 96.1f, 76.0f, 2.1f, menuHintText);
+      menuHintCap->SetColor(Vector3(215, 230, 250));
+      menuHintCap->SetOutlineColor(Vector3(0, 0, 0));
+      menuHintCap->SetTransparency(0.10f);
+      page->AddView(menuHintCap);
+      float mw = menuHintCap->GetTextWidthPercent();
+      menuHintCap->SetPosition(50.0f - mw * 0.5f, 96.1f);
+      menuHintCap->Show();
+    }
+
     windowManager->GetPagePath()->Push(pageData);
     windowManager->GetRoot()->AddView(page);
   }

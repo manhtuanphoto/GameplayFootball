@@ -6,14 +6,11 @@
 #define _HPP_UTILS_DIRECTORYPARSER
 
 #include "defines.hpp"
-
-#define BOOST_FILESYSTEM_NO_DEPRECATED
-#define BOOST_FILESYSTEM_VERSION 3
-#include "boost/filesystem.hpp"
+#include <filesystem>
 
 #include "base/log.hpp"
 
-namespace fs = boost::filesystem;
+namespace fs = std::filesystem;
 
 namespace blunted {
 
@@ -23,9 +20,7 @@ namespace blunted {
       DirectoryParser();
       virtual ~DirectoryParser();
 
-      void Parse(boost::filesystem::path path, const std::string &extension, std::vector<std::string> &files, bool recurse = true);
-
-    protected:
+      void Parse(std::filesystem::path path, const std::string &extension, std::vector<std::string> &files, bool recurse = true);
 
   };
 

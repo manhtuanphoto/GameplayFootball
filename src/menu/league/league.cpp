@@ -30,7 +30,7 @@ LeaguePage::LeaguePage(Gui2WindowManager *windowManager, const Gui2PageData &pag
   Gui2Grid *grid = new Gui2Grid(windowManager, "grid_league_main", 20, 30, 60, 50);
 
   Gui2Button *buttonStepTime = new Gui2Button(windowManager, "button_league_steptime", 20, 30, 30, 3, "Step time");
-  buttonStepTime->sig_OnClick.connect(boost::bind(&LeaguePage::StepTime, this));
+  buttonStepTime->sig_OnClick.connect(blunted::Bind(&LeaguePage::StepTime, this));
   buttonStepTime->SetFocus();
 
   grid->AddView(buttonStepTime, 0, 0);
@@ -101,9 +101,9 @@ LeagueStartPage::LeagueStartPage(Gui2WindowManager *windowManager, const Gui2Pag
   title->Show();
 
   Gui2Button *buttonLoad = new Gui2Button(windowManager, "button_league_start_load", 0, 0, 30, 3, "Continue saved league");
-  buttonLoad->sig_OnClick.connect(boost::bind(&LeagueStartPage::GoLoad, this));
+  buttonLoad->sig_OnClick.connect(blunted::Bind(&LeagueStartPage::GoLoad, this));
   Gui2Button *buttonNew = new Gui2Button(windowManager, "button_league_start_new", 0, 0, 30, 3, "Start new league");
-  buttonNew->sig_OnClick.connect(boost::bind(&LeagueStartPage::GoNew, this));
+  buttonNew->sig_OnClick.connect(blunted::Bind(&LeagueStartPage::GoNew, this));
 
   Gui2Grid *grid = new Gui2Grid(windowManager, "grid_league_start_choices", 5, 10, 90, 80);
   grid->AddView(buttonLoad, 0, 0);
@@ -151,7 +151,7 @@ LeagueStartLoadPage::LeagueStartLoadPage(Gui2WindowManager *windowManager, const
   browser = new Gui2FileBrowser(windowManager, "filebrowser_league_start_load", 5, 10, 40, 50, "./saves", e_DirEntryType_Directory);
   frame->AddView(browser);
 
-  browser->sig_OnClick.connect(boost::bind(&LeagueStartLoadPage::GoLoadSave, this));
+  browser->sig_OnClick.connect(blunted::Bind(&LeagueStartLoadPage::GoLoadSave, this));
 
   browser->SetFocus();
 
@@ -165,7 +165,7 @@ void LeagueStartLoadPage::GoLoadSave() {
   std::string saveName = browser->GetClickedEntry().name;
   SetActiveSaveDirectory(saveName);
 
-  boost::filesystem::path saveLoc("saves");
+  std::filesystem::path saveLoc("saves");
   saveLoc /= saveName;
 
   SaveDatabaseToAutosave();
@@ -200,7 +200,7 @@ LeagueStartNewPage::LeagueStartNewPage(Gui2WindowManager *windowManager, const G
   Gui2Caption *managerNameCaption = new Gui2Caption(windowManager, "caption_league_start_new_managername", 0, 0, 30, 2.5, "Manager name");
 
   databaseSelectButton = new Gui2Button(windowManager, "button_league_start_new_dbselect", 0, 0, 30, 3, data_SelectedDatabase);
-  databaseSelectButton->sig_OnClick.connect(boost::bind(&LeagueStartNewPage::GoDatabaseSelectDialog, this));
+  databaseSelectButton->sig_OnClick.connect(blunted::Bind(&LeagueStartNewPage::GoDatabaseSelectDialog, this));
 
   currencySelectPulldown = new Gui2Pulldown(windowManager, "pulldown_league_start_new_currencyselect", 0, 0, 30, 3);
   currencySelectPulldown->AddEntry("Euro", "euro");
@@ -222,7 +222,7 @@ LeagueStartNewPage::LeagueStartNewPage(Gui2WindowManager *windowManager, const G
   managerNameInput->SetAllowedChars("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890-=`~@#$%^&*()_+[]{}\\,./<>?;':\" ");
   managerNameInput->SetMaxLength(32);
   Gui2Button *proceedButton = new Gui2Button(windowManager, "button_league_start_new_proceed", 0, 0, 30, 3, "Proceed");
-  proceedButton->sig_OnClick.connect(boost::bind(&LeagueStartNewPage::GoProceed, this));
+  proceedButton->sig_OnClick.connect(blunted::Bind(&LeagueStartNewPage::GoProceed, this));
 
   Gui2Grid *gridDBSelect = new Gui2Grid(windowManager, "grid_league_start_new_choices_dbselect", 0, 0, 1, 1);
   gridDBSelect->AddView(databaseSelectCaption, 0, 0);
@@ -287,10 +287,10 @@ LeagueStartNewPage::~LeagueStartNewPage() {
 void LeagueStartNewPage::GoDatabaseSelectDialog() {
   databaseSelectDialog = new Gui2Dialog(windowManager, "dialog_league_start_new_dbselect", 30, 25, 40, 50, "Select source database");
   previousFocus = windowManager->GetFocus();
-  databaseSelectDialog->sig_OnClose.connect(boost::bind(&LeagueStartNewPage::CloseDatabaseSelectDialog, this));
+  databaseSelectDialog->sig_OnClose.connect(blunted::Bind(&LeagueStartNewPage::CloseDatabaseSelectDialog, this));
 
   databaseSelectBrowser = new Gui2FileBrowser(windowManager, "filebrowser_league_start_new_dbselect", 0, 0, 39, 40, "./databases", e_DirEntryType_Directory);
-  databaseSelectBrowser->sig_OnClick.connect(boost::bind(&LeagueStartNewPage::CloseDatabaseSelectDialog, this));
+  databaseSelectBrowser->sig_OnClick.connect(blunted::Bind(&LeagueStartNewPage::CloseDatabaseSelectDialog, this));
   databaseSelectDialog->AddContent(databaseSelectBrowser);
 
   this->AddView(databaseSelectDialog);
@@ -332,7 +332,7 @@ void LeagueStartNewPage::GoProceed() {
   previousFocus = windowManager->GetFocus();
 
   createSaveDialog = new Gui2Dialog(windowManager, "dialog_league_start_new_createsave", 25, 30, 50, 40, "New league creation");
-  createSaveDialog->sig_OnClose.connect(boost::bind(&LeagueStartNewPage::CloseCreateSaveDialog, this));
+  createSaveDialog->sig_OnClose.connect(blunted::Bind(&LeagueStartNewPage::CloseCreateSaveDialog, this));
 
   if (errorCode == 0) {
 
@@ -342,7 +342,7 @@ void LeagueStartNewPage::GoProceed() {
     createSaveDialog->AddContent(explanationText);
 
     (createSaveDialog->AddSingleButton("Yippee!"))->SetFocus();
-    createSaveDialog->sig_OnPositive.connect(boost::bind(&LeagueStartNewPage::CloseCreateSaveDialog, this));
+    createSaveDialog->sig_OnPositive.connect(blunted::Bind(&LeagueStartNewPage::CloseCreateSaveDialog, this));
 
     success = true;
 
@@ -365,8 +365,8 @@ void LeagueStartNewPage::GoProceed() {
     createSaveDialog->AddContent(explanationText);
 
     (createSaveDialog->AddSingleButton("Oh crud!"))->SetFocus();
-    createSaveDialog->sig_OnPositive.connect(boost::bind(&LeagueStartNewPage::CloseCreateSaveDialog, this));
-    // lol forwarding signals overload: createSaveDialog->sig_OnPositive.connect(boost::bind(boost:ref(Gui2Dialog::sig_OnClose), createSaveDialog));
+    createSaveDialog->sig_OnPositive.connect(blunted::Bind(&LeagueStartNewPage::CloseCreateSaveDialog, this));
+    // lol forwarding signals overload: createSaveDialog->sig_OnPositive.connect(blunted::Bind(boost:ref(Gui2Dialog::sig_OnClose), createSaveDialog));
 
     success = false;
 
@@ -405,7 +405,7 @@ void LeagueStartNewPage::CloseCreateSaveDialog() {
 
   SetActiveSaveDirectory(saveNameInput->GetText());
 
-  boost::filesystem::path saveLoc("saves");
+  std::filesystem::path saveLoc("saves");
   saveLoc /= GetActiveSaveDirectory();
   GetDB()->Load(saveLoc.string() + "/autosave.sqlite");
 

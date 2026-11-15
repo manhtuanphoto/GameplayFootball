@@ -18,7 +18,7 @@ namespace blunted {
       WAVLoader();
       virtual ~WAVLoader();
 
-      virtual void Load(std::string filename, boost::intrusive_ptr < Resource <SoundBuffer> > resource);
+      virtual void Load(std::string filename, blunted::intrusive_ptr < Resource <SoundBuffer> > resource);
 
     protected:
 

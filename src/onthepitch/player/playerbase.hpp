@@ -25,11 +25,11 @@ class PlayerBase {
     bool IsActive() { return isActive; }
 
     // get ready for some action
-    virtual void Activate(boost::intrusive_ptr<Node> humanoidSourceNode, boost::intrusive_ptr<Node> fullbodySourceNode, std::map<Vector3, Vector3> &colorCoords, boost::intrusive_ptr < Resource<Surface> > kit, boost::shared_ptr<AnimCollection> animCollection) = 0;
+    virtual void Activate(blunted::intrusive_ptr<Node> humanoidSourceNode, blunted::intrusive_ptr<Node> fullbodySourceNode, std::map<Vector3, Vector3> &colorCoords, blunted::intrusive_ptr < Resource<Surface> > kit, std::shared_ptr<AnimCollection> animCollection) = 0;
     // go back to bench/take a shower
     virtual void Deactivate();
 
-    void SetKit(boost::intrusive_ptr < Resource<Surface> > newKit) { humanoid->SetKit(newKit); }
+    void SetKit(blunted::intrusive_ptr < Resource<Surface> > newKit) { humanoid->SetKit(newKit); }
 
     void ResetPosition(const Vector3 &newPos, const Vector3 &focusPos) { humanoid->ResetPosition(newPos, focusPos); }
     void OffsetPosition(const Vector3 &offset) { humanoid->OffsetPosition(offset); }
@@ -59,8 +59,8 @@ class PlayerBase {
     void SetDebug(bool state);
     bool GetDebug() const;
 
-    boost::intrusive_ptr<Node> GetHumanoidNode() { return humanoid->GetHumanoidNode(); }
-    boost::intrusive_ptr<Node> GetFullbodyNode() { return humanoid->GetFullbodyNode(); }
+    blunted::intrusive_ptr<Node> GetHumanoidNode() { return humanoid->GetHumanoidNode(); }
+    blunted::intrusive_ptr<Node> GetFullbodyNode() { return humanoid->GetFullbodyNode(); }
 
     float GetDecayingPositionOffsetLength() { return humanoid->GetDecayingPositionOffsetLength(); }
 

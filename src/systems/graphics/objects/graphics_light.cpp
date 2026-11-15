@@ -4,6 +4,8 @@
 
 #include "graphics_light.hpp"
 
+#include <algorithm>
+
 #include "systems/graphics/rendering/r3d_messages.hpp"
 #include "managers/resourcemanagerpool.hpp"
 
@@ -24,13 +26,13 @@ namespace blunted {
   GraphicsLight::~GraphicsLight() {
   }
 
-  boost::intrusive_ptr<Interpreter> GraphicsLight::GetInterpreter(e_ObjectType objectType) {
+  blunted::intrusive_ptr<Interpreter> GraphicsLight::GetInterpreter(e_ObjectType objectType) {
     if (objectType == e_ObjectType_Light) {
-      boost::intrusive_ptr<GraphicsLight_LightInterpreter> LightInterpreter(new GraphicsLight_LightInterpreter(this));
+      blunted::intrusive_ptr<GraphicsLight_LightInterpreter> LightInterpreter(new GraphicsLight_LightInterpreter(this));
       return LightInterpreter;
     }
     Log(e_FatalError, "GraphicsLight", "GetInterpreter", "No appropriate interpreter found for this ObjectType");
-    return boost::intrusive_ptr<GraphicsLight_LightInterpreter>();
+    return blunted::intrusive_ptr<GraphicsLight_LightInterpreter>();
   }
 
   void GraphicsLight::SetPosition(const Vector3 &newPosition) {
@@ -92,14 +94,14 @@ namespace blunted {
       // verbose printf("erasing shadowmap %s (framebuffer)\n", (*iter).cameraName.c_str());
 
       // delete framebuffer
-      boost::intrusive_ptr<Renderer3DMessage_DeleteFrameBuffer> deleteFrameBuffer(new Renderer3DMessage_DeleteFrameBuffer((*iter).frameBufferID, e_TargetAttachment_Depth));
+      blunted::intrusive_ptr<Renderer3DMessage_DeleteFrameBuffer> deleteFrameBuffer(new Renderer3DMessage_DeleteFrameBuffer((*iter).frameBufferID, e_TargetAttachment_Depth));
       renderer3D->messageQueue.PushMessage(deleteFrameBuffer);
       deleteFrameBuffer->Wait();
 
       // happens automagically when noone links to texture anymore.. disabled here so we don't delete the texture twice
       /*
       (*iter).texture->resourceMutex.lock();
-      boost::intrusive_ptr<Renderer3DMessage_DeleteTexture> deleteTexture(new Renderer3DMessage_DeleteTexture((*iter).texture->GetResource()->GetID()));
+      blunted::intrusive_ptr<Renderer3DMessage_DeleteTexture> deleteTexture(new Renderer3DMessage_DeleteTexture((*iter).texture->GetResource()->GetID()));
       renderer3D->messageQueue.PushMessage(deleteTexture);
       deleteTexture->Wait();
       (*iter).texture->resourceMutex.unlock();
@@ -140,10 +142,11 @@ namespace blunted {
   }
 
   bool GLLI_SortVertexBufferQueueEntries(const VertexBufferQueueEntry &vb1, const VertexBufferQueueEntry &vb2) {
-    return vb1.vertexBuffer->GetResource()->GetID() < vb2.vertexBuffer->GetResource()->GetID();
+    if (vb1.hasSkinning != vb2.hasSkinning) return !vb1.hasSkinning;
+    return vb1.vaoIDCache < vb2.vaoIDCache;
   }
 
-  void GraphicsLight_LightInterpreter::EnqueueShadowMap(boost::intrusive_ptr<Camera> camera, std::deque < boost::intrusive_ptr<Geometry> > visibleGeometry) {
+  void GraphicsLight_LightInterpreter::EnqueueShadowMap(blunted::intrusive_ptr<Camera> camera, std::deque < blunted::intrusive_ptr<Geometry> > visibleGeometry) {
     if (!caller->GetShadow()) return;
 
     int index = -1;
@@ -164,13 +167,13 @@ namespace blunted {
         Renderer3D *renderer3D = caller->GetGraphicsScene()->GetGraphicsSystem()->GetRenderer3D();
         map.texture->GetResource()->SetRenderer3D(renderer3D);
         //map.texture->GetResource()->CreateTexture(e_InternalPixelFormat_DepthComponent32, e_PixelFormat_DepthComponent, 1024, 1024, false, false, false, true, true);
-        map.texture->GetResource()->CreateTexture(e_InternalPixelFormat_DepthComponent16, e_PixelFormat_DepthComponent, 2048, 2048, false, false, false, true, true);
+        map.texture->GetResource()->CreateTexture(e_InternalPixelFormat_DepthComponent24, e_PixelFormat_DepthComponent, 4096, 4096, false, false, false, true, true);
         //map.texture->GetResource()->CreateTexture(e_InternalPixelFormat_DepthComponent16, e_PixelFormat_DepthComponent, 4096, 4096, false, false, false, true, true); // filter on to get hardware shadowmap AA in shader: http://stackoverflow.com/questions/22419682/glsl-sampler2dshadow-and-shadow2d-clarification
         //map.texture->GetResource()->CreateTexture(e_InternalPixelFormat_DepthComponent32, e_PixelFormat_DepthComponent, 4096, 4096, false, false, false, true, true);
         //map.texture->GetResource()->CreateTexture(e_InternalPixelFormat_DepthComponent16, e_PixelFormat_DepthComponent, 8192, 8192, false, false, false, true, true);
 
         // create framebuffer for shadowmap
-        boost::intrusive_ptr<Renderer3DMessage_CreateFrameBuffer> createFrameBuffer(new Renderer3DMessage_CreateFrameBuffer(e_TargetAttachment_Depth, map.texture->GetResource()->GetID()));
+        blunted::intrusive_ptr<Renderer3DMessage_CreateFrameBuffer> createFrameBuffer(new Renderer3DMessage_CreateFrameBuffer(e_TargetAttachment_Depth, map.texture->GetResource()->GetID()));
         renderer3D->messageQueue.PushMessage(createFrameBuffer);
         createFrameBuffer->Wait();
         map.frameBufferID = createFrameBuffer->frameBufferID;
@@ -185,9 +188,9 @@ namespace blunted {
 
     // add geometry
 
-    std::deque < boost::intrusive_ptr<Geometry> >::iterator visibleGeometryIter = visibleGeometry.begin();
+    std::deque < blunted::intrusive_ptr<Geometry> >::iterator visibleGeometryIter = visibleGeometry.begin();
     while (visibleGeometryIter != visibleGeometry.end()) {
-      boost::intrusive_ptr<GraphicsGeometry_GeometryInterpreter> interpreter = static_pointer_cast<GraphicsGeometry_GeometryInterpreter>((*visibleGeometryIter)->GetInterpreter(e_SystemType_Graphics));
+      blunted::intrusive_ptr<GraphicsGeometry_GeometryInterpreter> interpreter = static_pointer_cast<GraphicsGeometry_GeometryInterpreter>((*visibleGeometryIter)->GetInterpreter(e_SystemType_Graphics));
 
       (*visibleGeometryIter)->LockSubject();
 
@@ -205,7 +208,7 @@ namespace blunted {
       visibleGeometryIter++;
     }
 
-    //std::sort(caller->shadowMaps.at(index).visibleGeometry.begin(), caller->shadowMaps.at(index).visibleGeometry.end(), GLLI_SortVertexBufferQueueEntries);
+    std::sort(caller->shadowMaps.at(index).visibleGeometry.begin(), caller->shadowMaps.at(index).visibleGeometry.end(), GLLI_SortVertexBufferQueueEntries);
 
 
     // all this is way too hardcoded and should somehow heed the camera bounding box better
@@ -254,13 +257,22 @@ namespace blunted {
     return empty;
   }
 
+  const ShadowMap *GraphicsLight_LightInterpreter::FindShadowMap(const std::string &camName) const {
+    for (unsigned int i = 0; i < caller->shadowMaps.size(); i++) {
+      if (caller->shadowMaps[i].cameraName == camName) {
+        return &caller->shadowMaps[i];
+      }
+    }
+    return nullptr;
+  }
+
   void GraphicsLight_LightInterpreter::OnPoke() {
     if (!caller->GetShadow()) return;
 
     std::vector<ShadowMap>::iterator iter = caller->shadowMaps.begin();
 
     while (iter != caller->shadowMaps.end()) {
-      boost::intrusive_ptr<Renderer3DMessage_RenderShadowMap> renderShadowMap(new Renderer3DMessage_RenderShadowMap(*iter));
+      blunted::intrusive_ptr<Renderer3DMessage_RenderShadowMap> renderShadowMap(new Renderer3DMessage_RenderShadowMap(*iter));
       caller->GetGraphicsScene()->GetGraphicsSystem()->GetRenderer3D()->messageQueue.PushMessage(renderShadowMap);
       renderShadowMap->Wait();
 

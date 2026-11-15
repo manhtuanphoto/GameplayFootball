@@ -24,6 +24,7 @@
 
 #include "controller/elizacontroller.hpp"
 #include "controller/strategies/strategy.hpp"
+#include "../AIsupport/ai_adaptive_pipeline.hpp"
 
 #include "../../main.hpp"
 #include "../../utils.hpp"
@@ -43,8 +44,12 @@ Player::Player(Team *team, PlayerData *playerData) : PlayerBase(team->GetMatch()
   manMarkingID = -1;
   buf_nameCaption = "...";
   buf_debugCaption = "debug";
+  buf_cursorShowCondition = false;
+  fetchedbuf_cursorShowCondition = false;
+  lastRenderedCursorColor = Vector3(-1, -1, -1);
   nameCaption = 0;
   debugCaption = 0;
+  cursorImg = 0;
 
   triggerControlledBallCollision = false;
 
@@ -61,6 +66,7 @@ Player::~Player() {
   if (Verbose()) printf("exiting player.. ");
   if (nameCaption) menuTask->GetWindowManager()->MarkForDeletion(nameCaption);
   if (debugCaption) menuTask->GetWindowManager()->MarkForDeletion(debugCaption);
+  if (cursorImg) menuTask->GetWindowManager()->MarkForDeletion(cursorImg);
   menuTask.reset();
   if (Verbose()) printf("done\n");
 }
@@ -79,7 +85,7 @@ Team *Player::GetTeam() {
   return team;
 }
 
-void Player::Activate(boost::intrusive_ptr<Node> humanoidSourceNode, boost::intrusive_ptr<Node> fullbodySourceNode, std::map<Vector3, Vector3> &colorCoords, boost::intrusive_ptr < Resource<Surface> > kit, boost::shared_ptr<AnimCollection> animCollection) {
+void Player::Activate(blunted::intrusive_ptr<Node> humanoidSourceNode, blunted::intrusive_ptr<Node> fullbodySourceNode, std::map<Vector3, Vector3> &colorCoords, blunted::intrusive_ptr < Resource<Surface> > kit, std::shared_ptr<AnimCollection> animCollection) {
 
   assert(!isActive);
 
@@ -93,14 +99,25 @@ void Player::Activate(boost::intrusive_ptr<Node> humanoidSourceNode, boost::intr
 
   buf_nameCaptionShowCondition = false;
   buf_debugCaptionShowCondition = false;
+  buf_cursorShowCondition = false;
+  fetchedbuf_cursorShowCondition = false;
+  lastRenderedCursorColor = Vector3(-1, -1, -1);
   if (GetDebugMode() != e_DebugMode_Off) buf_nameCaptionShowCondition = true;
   if (GetDebugMode() != e_DebugMode_Off) buf_debugCaptionShowCondition = true;
 
   nameCaption = new Gui2Caption(GetMenuTask()->GetWindowManager(), "game_player_name_" + int_to_str(id), 0, 0, 1, 2.0, playerData->GetLastName());
   nameCaption->SetTransparency(0.3f);
+  nameCaption->Hide();
   GetMenuTask()->GetWindowManager()->GetRoot()->AddView(nameCaption);
   debugCaption = new Gui2Caption(GetMenuTask()->GetWindowManager(), "game_player_debug_" + int_to_str(id), 0, 0, 1, 1.6, "debug");
+  debugCaption->Hide();
   GetMenuTask()->GetWindowManager()->GetRoot()->AddView(debugCaption);
+
+  float cursorH = 1.15f;
+  float cursorW = cursorH / GetMenuTask()->GetWindowManager()->GetAspectRatio();
+  cursorImg = new Gui2Image(GetMenuTask()->GetWindowManager(), "game_player_cursor_" + int_to_str(id), 0, 0, cursorW, cursorH);
+  cursorImg->Hide();
+  GetMenuTask()->GetWindowManager()->GetRoot()->AddView(cursorImg);
 
   CastHumanoid()->ResetPosition(GetFormationEntry().position * 25 * Vector3(-team->GetSide(), -team->GetSide(), 0), Vector3(0));
 
@@ -112,8 +129,10 @@ void Player::Deactivate() {
 
   menuTask->GetWindowManager()->MarkForDeletion(nameCaption);
   menuTask->GetWindowManager()->MarkForDeletion(debugCaption);
+  if (cursorImg) menuTask->GetWindowManager()->MarkForDeletion(cursorImg);
   nameCaption = 0;
   debugCaption = 0;
+  cursorImg = 0;
 
   if (team->IsHumanControlled(this->GetID())) {
     team->DeselectPlayer(this); // don't want any humangamer to have control of this player anymore
@@ -349,51 +368,48 @@ void Player::PreparePutBuffers(unsigned long snapshotTime_ms) {
 
   PlayerBase::PreparePutBuffers(snapshotTime_ms);
 
-  if (GetDebugMode() == e_DebugMode_Off) {
-    buf_nameCaptionShowCondition = team->IsHumanControlled(id);
-    if (team->GetHumanGamerCount() == 0) buf_nameCaptionShowCondition = team->GetDesignatedTeamPossessionPlayer() == this;
-  }
+  // Player names are now displayed in the Bottom-Left & Bottom-Right broadcast HUD nameplates, never above heads!
+  buf_nameCaptionShowCondition = (GetDebugMode() != e_DebugMode_Off);
+  buf_cursorShowCondition = team->IsHumanControlled(id);
+
   e_PlayerColor playerColor = team->GetPlayerColor(id);
   switch (playerColor) {
     case e_PlayerColor_Green:
-      buf_playerColor = Vector3(100, 255, 140);
+      buf_playerColor = Vector3(85, 225, 130);
       break;
     case e_PlayerColor_Red:
-      buf_playerColor = Vector3(255, 110, 110);
+      buf_playerColor = Vector3(255, 95, 95);
       break;
     case e_PlayerColor_Blue:
-      buf_playerColor = Vector3(100, 140, 255);
+      buf_playerColor = Vector3(65, 175, 255);
       break;
     case e_PlayerColor_Yellow:
-      buf_playerColor = Vector3(255, 255, 60);
+      buf_playerColor = Vector3(255, 235, 60);
       break;
     case e_PlayerColor_Purple:
-      buf_playerColor = Vector3(200, 80, 200);
+      buf_playerColor = Vector3(200, 90, 240);
       break;
     case e_PlayerColor_Default:
-      buf_playerColor = Vector3(200, 200, 200);
+      buf_playerColor = Vector3(75, 185, 255);
       break;
   };
 
-  std::string name = playerData->GetLastName();
-  if (buf_debugCaptionShowCondition) {
-    //name.append(" " + GetRoleName(GetDynamicFormationEntry().role));
+  if (GetDebugMode() != e_DebugMode_Off) {
+    buf_debugCaptionShowCondition = true;
     buf_debugCaption = GetRoleName(GetDynamicFormationEntry().role);
+    buf_debugCaptionColor = Vector3(210, 210, 210);
+  } else {
+    buf_debugCaptionShowCondition = false;
   }
 
-  buf_nameCaption = name;
+  buf_nameCaption = playerData->GetLastName();
 
   if (GetExternalController()) {
-    if (static_cast<HumanController*>(GetExternalController())->GetActionMode() == 1) {
-      //buf_nameCaption += " X";
-    } else if (static_cast<HumanController*>(GetExternalController())->GetActionMode() == 2) {
-      //buf_nameCaption += " !";
+    if (static_cast<HumanController*>(GetExternalController())->GetActionMode() == 2) {
       buf_playerColor =
           buf_playerColor *
           (std::sin(match->GetActualTime_ms() * 0.02f) * 0.3f + 0.7f);
     }
-
-    //if (hasPossession) buf_nameCaption.append(" P");
   }
 
 }
@@ -404,6 +420,7 @@ void Player::FetchPutBuffers(unsigned long putTime_ms) {
 
   fetchedbuf_nameCaptionShowCondition = buf_nameCaptionShowCondition;
   fetchedbuf_debugCaptionShowCondition = buf_debugCaptionShowCondition;
+  fetchedbuf_cursorShowCondition = buf_cursorShowCondition;
   fetchedbuf_nameCaption = buf_nameCaption;
   fetchedbuf_debugCaption = buf_debugCaption;
   fetchedbuf_nameCaptionPos = buf_nameCaptionPos;
@@ -445,17 +462,51 @@ void Player::Put2D() {
     }
   }
 
+  if (cursorImg) {
+    if (fetchedbuf_cursorShowCondition) {
+      Vector3 cursorPos3D = GetProjectedCoord(GetGeomPosition() + Vector3(0, 0.25f, 2.22f), match->GetCamera());
+      float cw = 0.0f, ch = 0.0f;
+      cursorImg->GetSize(cw, ch);
+
+      if ((fetchedbuf_playerColor - lastRenderedCursorColor).GetLength() > 2.0f) {
+        int px = 0, py = 0, pw = 0, ph = 0;
+        GetMenuTask()->GetWindowManager()->GetCoordinates(0, 0, cw, ch, px, py, pw, ph);
+        if (pw >= 4 && ph >= 4) {
+          blunted::intrusive_ptr<Image2D> cimg = cursorImg->GetImage2D();
+          cimg->DrawRectangle(0, 0, pw, ph, Vector3(0, 0, 0), 0);
+
+          Triangle outerTri;
+          outerTri.SetVertex(0, Vector3(1.0f, 1.0f, 0));
+          outerTri.SetVertex(1, Vector3((float)(pw - 1), 1.0f, 0));
+          outerTri.SetVertex(2, Vector3(pw * 0.5f, (float)(ph - 1), 0));
+          cimg->DrawTriangle(outerTri, Vector3(10, 14, 22), 235);
+
+          Triangle innerTri;
+          innerTri.SetVertex(0, Vector3(2.5f, 2.0f, 0));
+          innerTri.SetVertex(1, Vector3((float)pw - 2.5f, 2.0f, 0));
+          innerTri.SetVertex(2, Vector3(pw * 0.5f, (float)ph - 2.5f, 0));
+          cimg->DrawTriangle(innerTri, fetchedbuf_playerColor, 248);
+          cimg->OnChange();
+        }
+        lastRenderedCursorColor = fetchedbuf_playerColor;
+      }
+
+      cursorImg->SetPosition(cursorPos3D.coords[0] - cw * 0.5f, cursorPos3D.coords[1] - ch);
+      cursorImg->Show();
+    } else {
+      cursorImg->Hide();
+    }
+  }
+
   if (fetchedbuf_nameCaptionShowCondition) {
-    //Vector3 captionPos3D = fetchedbuf_nameCaptionPos;
-    //Vector3 captionPos2D = GetProjectedCoord(captionPos3D, match->GetCamera());
     Vector3 captionPos3D = GetProjectedCoord(GetGeomPosition() + Vector3(0, 0.5f, 2.4f), match->GetCamera()); // geom pos because in Put2D, we cannot access normal class vars (because multithreading)
-    float w, h;
-    nameCaption->GetSize(w, h);
+    nameCaption->SetCaption(fetchedbuf_nameCaption);
     nameCaption->SetColor(fetchedbuf_playerColor);
     nameCaption->SetOutlineColor(fetchedbuf_playerColor * 0.4f);
+    float w = nameCaption->GetTextWidthPercent();
+    float dummyW, h;
+    nameCaption->GetSize(dummyW, h);
     nameCaption->SetPosition(captionPos3D.coords[0] - w * 0.5f, captionPos3D.coords[1] - h);
-
-    nameCaption->SetCaption(fetchedbuf_nameCaption);
     nameCaption->Show();
   } else {
     nameCaption->Hide();
@@ -463,12 +514,12 @@ void Player::Put2D() {
 
   if (fetchedbuf_debugCaptionShowCondition) {
     Vector3 captionPos3D = GetProjectedCoord(GetGeomPosition() + Vector3(0, 0.3f, 2.0f), match->GetCamera());
-    float w, h;
-    debugCaption->GetSize(w, h);
-    debugCaption->SetPosition(captionPos3D.coords[0] - w * 0.5f, captionPos3D.coords[1] - h);
-    //printf("%s\n", fetchedbuf_debugCaption.c_str());
     debugCaption->SetCaption(fetchedbuf_debugCaption);
     debugCaption->SetColor(fetchedbuf_debugCaptionColor);
+    float w = debugCaption->GetTextWidthPercent();
+    float dummyW, h;
+    debugCaption->GetSize(dummyW, h);
+    debugCaption->SetPosition(captionPos3D.coords[0] - w * 0.5f, captionPos3D.coords[1] - h);
     debugCaption->Show();
   } else {
     debugCaption->Hide();
@@ -476,6 +527,9 @@ void Player::Put2D() {
 }
 
 void Player::Hide2D() {
+  if (cursorImg) {
+    cursorImg->Hide();
+  }
   if (fetchedbuf_nameCaptionShowCondition) {
     assert(nameCaption);
     nameCaption->Hide();
@@ -525,18 +579,13 @@ float Player::GetStaminaStat() const {
 
 float Player::GetStat(const char *name) const {
 
-  //if (team->GetHumanGamerCount() != 0) return 1.0f;
-
   float multiplier = 1.0f;
-  //if (team->GetID() == 0) multiplier = 0.5f; else multiplier = 1.0f;
   if (team->GetHumanGamerCount() == 0) multiplier = 0.3f + 0.7f * team->GetMatch()->GetMatchDifficulty();
-  multiplier *= 0.7f + 0.3f * GetFatigueFactorInv(); // todo: some stats are more affected by fatigue than others
-  //if (GetExternalController()) printf("stat %s: %f\n", name, playerData->GetStat(name));
-  //if (GetDebug()) printf("stat %s == %f\n", name, playerData->GetStat(name) * multiplier);
+  multiplier *= 0.7f + 0.3f * GetFatigueFactorInv();
 
-  if (playerData->GetStat(name) == 0.0f) printf("NULLSTAT: name: %s\n", name);
-  //printf("stat %s: %f * %f\n", name, playerData->GetStat(name), multiplier);
-  return playerData->GetStat(name) * multiplier;
+  const float baseStat = playerData->GetStat(name);
+  if (baseStat == 0.0f) printf("NULLSTAT: name: %s\n", name);
+  return baseStat * multiplier;
 }
 
 void Player::ResetSituation(const Vector3 &focusPos) {

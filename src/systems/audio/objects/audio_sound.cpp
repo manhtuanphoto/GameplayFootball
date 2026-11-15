@@ -23,13 +23,13 @@ namespace blunted {
   AudioSound::~AudioSound() {
   }
 
-  boost::intrusive_ptr<Interpreter> AudioSound::GetInterpreter(e_ObjectType objectType) {
+  blunted::intrusive_ptr<Interpreter> AudioSound::GetInterpreter(e_ObjectType objectType) {
     if (objectType == e_ObjectType_Sound) {
-      boost::intrusive_ptr<AudioSound_SoundInterpreter> soundInterpreter(new AudioSound_SoundInterpreter(this));
+      blunted::intrusive_ptr<AudioSound_SoundInterpreter> soundInterpreter(new AudioSound_SoundInterpreter(this));
       return soundInterpreter;
     }
     Log(e_FatalError, "AudioSound", "GetInterpreter", "No appropriate interpreter found for this ObjectType");
-    return boost::intrusive_ptr<AudioSound_SoundInterpreter>();
+    return blunted::intrusive_ptr<AudioSound_SoundInterpreter>();
   }
 
   void AudioSound::SetPosition(const Vector3 &newPosition) {
@@ -53,7 +53,7 @@ namespace blunted {
   AudioSound_SoundInterpreter::AudioSound_SoundInterpreter(AudioSound *caller) : caller(caller) {
   }
 
-  void AudioSound_SoundInterpreter::OnLoad(boost::intrusive_ptr < Resource<SoundBuffer> > resource) {
+  void AudioSound_SoundInterpreter::OnLoad(blunted::intrusive_ptr < Resource<SoundBuffer> > resource) {
 
     bool alreadyThere = false;
     // todo: use the resource mutex ??
@@ -82,7 +82,7 @@ namespace blunted {
   void AudioSound_SoundInterpreter::OnPoke() {
     AudioRenderer *renderer = caller->GetAudioScene()->GetAudioSystem()->GetAudioRenderer();
     caller->audioSoundBuffer->resourceMutex.lock();
-    boost::intrusive_ptr<AudioRendererMessage_PlayAudioSoundBuffer> playMsg(new AudioRendererMessage_PlayAudioSoundBuffer(caller->audioSoundBuffer->GetResource()->GetID()));
+    blunted::intrusive_ptr<AudioRendererMessage_PlayAudioSoundBuffer> playMsg(new AudioRendererMessage_PlayAudioSoundBuffer(caller->audioSoundBuffer->GetResource()->GetID()));
     caller->audioSoundBuffer->resourceMutex.unlock();
     renderer->messageQueue.PushMessage(playMsg);
   }
@@ -90,7 +90,7 @@ namespace blunted {
   void AudioSound_SoundInterpreter::UpdateParams() {
     AudioRenderer *renderer = caller->GetAudioScene()->GetAudioSystem()->GetAudioRenderer();
     caller->audioSoundBuffer->resourceMutex.lock();
-    boost::intrusive_ptr<AudioRendererMessage_ConfigAudioSoundBuffer> updateMsg(new AudioRendererMessage_ConfigAudioSoundBuffer(caller->audioSoundBuffer->GetResource()->GetID(), caller->GetGain(), caller->GetPitch(), caller->GetLoop()));
+    blunted::intrusive_ptr<AudioRendererMessage_ConfigAudioSoundBuffer> updateMsg(new AudioRendererMessage_ConfigAudioSoundBuffer(caller->audioSoundBuffer->GetResource()->GetID(), caller->GetGain(), caller->GetPitch(), caller->GetLoop()));
     caller->audioSoundBuffer->resourceMutex.unlock();
     renderer->messageQueue.PushMessage(updateMsg);
   }

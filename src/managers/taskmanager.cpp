@@ -20,7 +20,7 @@ namespace blunted {
 
   void TaskManager::Initialize() {
 
-    int numthreads = boost::thread::hardware_concurrency();
+    int numthreads = static_cast<int>(std::thread::hardware_concurrency());
     if (numthreads < 3) numthreads = 3; // todo: make minimum configurable
     for (int i = 0; i < numthreads; i++) {
       WorkerThread *worker = new WorkerThread(i);
@@ -40,7 +40,7 @@ namespace blunted {
     // gracefully shutdown threads
     int poolSize = pool.size();
     for (int i = 0; i < poolSize; i++) {
-      boost::intrusive_ptr<Message_Shutdown> shutdown(new Message_Shutdown());
+      blunted::intrusive_ptr<Message_Shutdown> shutdown(new Message_Shutdown());
       workQueue.PushMessage(shutdown);
       //printf("waiting for wait\n");
       shutdown->Wait();
@@ -71,7 +71,7 @@ namespace blunted {
     pool.at(workerThreadIndex)->GetWorkerState(state, commandName);
   }
 
-  void TaskManager::EnqueueWork(boost::intrusive_ptr<Command> message, bool notify) { // ATOMIC
+  void TaskManager::EnqueueWork(blunted::intrusive_ptr<Command> message, bool notify) { // ATOMIC
     if (pool.size() > 0) {
 
       if (workQueue.GetPending() > 50) {
@@ -92,7 +92,7 @@ namespace blunted {
     workQueue.NotifyWaiting(notificationSubject);
   }
 
-  boost::intrusive_ptr<Command> TaskManager::WaitForWork() { // ATOMIC
+  blunted::intrusive_ptr<Command> TaskManager::WaitForWork() { // ATOMIC
     return workQueue.WaitForMessage();
   }
 

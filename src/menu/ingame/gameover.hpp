@@ -24,9 +24,12 @@ class GameOverPage : public Gui2Page {
     virtual ~GameOverPage();
 
     void GoRematch();
+    void GoSandbox();
     void GoMainMenu();
 
     Gui2Button *buttonOkay;
+    Gui2Button *buttonRematch;
+    Gui2Button *buttonSandbox;
 
   protected:
     Match *match;

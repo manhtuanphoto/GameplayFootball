@@ -28,7 +28,7 @@ namespace blunted {
       virtual void Init() = 0;
       virtual void Exit() = 0; // ATOMIC
 
-      virtual void CreateSystemObjects(boost::intrusive_ptr<Object> object) = 0;
+      virtual void CreateSystemObjects(blunted::intrusive_ptr<Object> object) = 0;
 
       virtual const std::string GetName() const = 0;
       virtual e_SceneType GetSceneType() const = 0;
@@ -46,7 +46,7 @@ namespace blunted {
       virtual void OnLoad() = 0;
       virtual void OnUnload() = 0;
 
-      virtual ISystemObject *CreateSystemObject(boost::intrusive_ptr<Object> object) = 0;
+      virtual ISystemObject *CreateSystemObject(blunted::intrusive_ptr<Object> object) = 0;
 
     protected:
 

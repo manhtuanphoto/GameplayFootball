@@ -46,41 +46,34 @@ namespace blunted {
   }
 
   AABB AABB::operator * (const Quaternion &rot) const {
-    AABB aabb(*this);
-    std::vector<Vector3> vecs;
-    Vector3 vec;
-    vec.Set(aabb.minxyz.coords[0], aabb.minxyz.coords[1], aabb.minxyz.coords[2]);
-    vecs.push_back(vec);
-    vec.Set(aabb.maxxyz.coords[0], aabb.minxyz.coords[1], aabb.minxyz.coords[2]);
-    vecs.push_back(vec);
-    vec.Set(aabb.minxyz.coords[0], aabb.maxxyz.coords[1], aabb.minxyz.coords[2]);
-    vecs.push_back(vec);
-    vec.Set(aabb.maxxyz.coords[0], aabb.maxxyz.coords[1], aabb.minxyz.coords[2]);
-    vecs.push_back(vec);
-    vec.Set(aabb.minxyz.coords[0], aabb.minxyz.coords[1], aabb.maxxyz.coords[2]);
-    vecs.push_back(vec);
-    vec.Set(aabb.maxxyz.coords[0], aabb.minxyz.coords[1], aabb.maxxyz.coords[2]);
-    vecs.push_back(vec);
-    vec.Set(aabb.minxyz.coords[0], aabb.maxxyz.coords[1], aabb.maxxyz.coords[2]);
-    vecs.push_back(vec);
-    vec.Set(aabb.maxxyz.coords[0], aabb.maxxyz.coords[1], aabb.maxxyz.coords[2]);
-    vecs.push_back(vec);
+    AABB aabb;
+    Vector3 vecs[8] = {
+      Vector3(minxyz.coords[0], minxyz.coords[1], minxyz.coords[2]),
+      Vector3(maxxyz.coords[0], minxyz.coords[1], minxyz.coords[2]),
+      Vector3(minxyz.coords[0], maxxyz.coords[1], minxyz.coords[2]),
+      Vector3(maxxyz.coords[0], maxxyz.coords[1], minxyz.coords[2]),
+      Vector3(minxyz.coords[0], minxyz.coords[1], maxxyz.coords[2]),
+      Vector3(maxxyz.coords[0], minxyz.coords[1], maxxyz.coords[2]),
+      Vector3(minxyz.coords[0], maxxyz.coords[1], maxxyz.coords[2]),
+      Vector3(maxxyz.coords[0], maxxyz.coords[1], maxxyz.coords[2])
+    };
 
-    for (int i = 0; i < (signed int)vecs.size(); i++) {
-      vecs.at(i) = rot * vecs.at(i);
+    Vector3 first = rot * vecs[0];
+    aabb.minxyz = first;
+    aabb.maxxyz = first;
+
+    for (int i = 1; i < 8; i++) {
+      Vector3 r = rot * vecs[i];
+      if (r.coords[0] < aabb.minxyz.coords[0]) aabb.minxyz.coords[0] = r.coords[0];
+      if (r.coords[0] > aabb.maxxyz.coords[0]) aabb.maxxyz.coords[0] = r.coords[0];
+      if (r.coords[1] < aabb.minxyz.coords[1]) aabb.minxyz.coords[1] = r.coords[1];
+      if (r.coords[1] > aabb.maxxyz.coords[1]) aabb.maxxyz.coords[1] = r.coords[1];
+      if (r.coords[2] < aabb.minxyz.coords[2]) aabb.minxyz.coords[2] = r.coords[2];
+      if (r.coords[2] > aabb.maxxyz.coords[2]) aabb.maxxyz.coords[2] = r.coords[2];
     }
 
-    aabb.Reset();
-
-    for (int i = 0; i < (signed int)vecs.size(); i++) {
-      if (vecs.at(i).coords[0] < aabb.minxyz.coords[0]) aabb.minxyz.coords[0] = vecs.at(i).coords[0];
-      if (vecs.at(i).coords[0] > aabb.maxxyz.coords[0]) aabb.maxxyz.coords[0] = vecs.at(i).coords[0];
-      if (vecs.at(i).coords[1] < aabb.minxyz.coords[1]) aabb.minxyz.coords[1] = vecs.at(i).coords[1];
-      if (vecs.at(i).coords[1] > aabb.maxxyz.coords[1]) aabb.maxxyz.coords[1] = vecs.at(i).coords[1];
-      if (vecs.at(i).coords[2] < aabb.minxyz.coords[2]) aabb.minxyz.coords[2] = vecs.at(i).coords[2];
-      if (vecs.at(i).coords[2] > aabb.maxxyz.coords[2]) aabb.maxxyz.coords[2] = vecs.at(i).coords[2];
-    }
-
+    aabb.radius_needupdate = true;
+    aabb.center_needupdate = true;
     radius_needupdate = true;
     center_needupdate = true;
     return aabb;
@@ -105,12 +98,10 @@ namespace blunted {
 
   real AABB::GetRadius() const {
     if (radius_needupdate) {
-      real x, y, z;
-      x = maxxyz.coords[0] - minxyz.coords[0];
-      y = maxxyz.coords[1] - minxyz.coords[1];
-      z = maxxyz.coords[2] - minxyz.coords[2];
-      real length = sqrt(pow(x, 2) + pow(y, 2));
-      radius = sqrt(pow(length, 2) + pow(z, 2)) / 2.0;
+      real x = maxxyz.coords[0] - minxyz.coords[0];
+      real y = maxxyz.coords[1] - minxyz.coords[1];
+      real z = maxxyz.coords[2] - minxyz.coords[2];
+      radius = std::sqrt(x * x + y * y + z * z) * 0.5f;
       radius_needupdate = false;
     }
     return radius;
@@ -118,9 +109,9 @@ namespace blunted {
 
   void AABB::GetCenter(Vector3 &center) const {
     if (center_needupdate) {
-      real x = (minxyz.coords[0] + maxxyz.coords[0]) / 2.0;
-      real y = (minxyz.coords[1] + maxxyz.coords[1]) / 2.0;
-      real z = (minxyz.coords[2] + maxxyz.coords[2]) / 2.0;
+      real x = (minxyz.coords[0] + maxxyz.coords[0]) * 0.5f;
+      real y = (minxyz.coords[1] + maxxyz.coords[1]) * 0.5f;
+      real z = (minxyz.coords[2] + maxxyz.coords[2]) * 0.5f;
       this->center.Set(x, y, z);
       center_needupdate = false;
     }
@@ -143,41 +134,20 @@ namespace blunted {
   }
 
   bool AABB::Intersects(const vector_Planes &planes) const {
-    bool aabb_intersects_planecollection = true;
-
-    // all points in the aabb
-    Vector3 aabb_points[8];
-    aabb_points[0].Set(minxyz);
-    aabb_points[1].Set(minxyz.coords[0], maxxyz.coords[1], minxyz.coords[2]);
-    aabb_points[2].Set(minxyz.coords[0], maxxyz.coords[1], maxxyz.coords[2]);
-    aabb_points[3].Set(minxyz.coords[0], minxyz.coords[1], maxxyz.coords[2]);
-    aabb_points[4].Set(maxxyz.coords[0], minxyz.coords[1], minxyz.coords[2]);
-    aabb_points[5].Set(maxxyz.coords[0], maxxyz.coords[1], minxyz.coords[2]);
-    aabb_points[6].Set(maxxyz);
-    aabb_points[7].Set(maxxyz.coords[0], minxyz.coords[1], maxxyz.coords[2]);
-
-    real determinant;
-    real distance;
-    int planes_size = planes.size();
+    const int planes_size = static_cast<int>(planes.size());
     for (int p = 0; p < planes_size; p++) {
-      // check if there is any point (that defines this aabb) on the inside of this plane
-      aabb_intersects_planecollection = false;
-
-      determinant = planes.at(p).GetDeterminant();
-      for (int ap = 0; ap < 8; ap++) {
-        distance = determinant + planes.at(p).GetVertex(1).coords[0] * aabb_points[ap].coords[0] +
-                                 planes.at(p).GetVertex(1).coords[1] * aabb_points[ap].coords[1] +
-                                 planes.at(p).GetVertex(1).coords[2] * aabb_points[ap].coords[2];
-
-        if (distance > 0) {
-          aabb_intersects_planecollection = true;
-          break;
-        }
+      const Plane &pl = planes[p];
+      const Vector3 &n = pl.GetVertex(1);
+      // Positive vertex (p-vertex) maximizes dot(n, corner); <= 0 iff ALL 8 corners are <= 0!
+      const real px = (n.coords[0] >= 0.0f) ? maxxyz.coords[0] : minxyz.coords[0];
+      const real py = (n.coords[1] >= 0.0f) ? maxxyz.coords[1] : minxyz.coords[1];
+      const real pz = (n.coords[2] >= 0.0f) ? maxxyz.coords[2] : minxyz.coords[2];
+      const real maxDist = pl.GetDeterminant() + n.coords[0] * px + n.coords[1] * py + n.coords[2] * pz;
+      if (maxDist <= 0.0f) {
+        return false;
       }
-      if (aabb_intersects_planecollection == false) break;
     }
-
-    return aabb_intersects_planecollection;
+    return true;
   }
 
   bool AABB::Intersects(const AABB &src) const {

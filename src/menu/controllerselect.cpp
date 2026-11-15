@@ -51,7 +51,9 @@ ControllerSelectPage::ControllerSelectPage(Gui2WindowManager *windowManager, con
       if (i == 0 && controllers.size() < 2) side.side = -1; // autoselect 1st player == team 0 (side -1)
       else if (i == 1) side.side = -1; // if more than 1 controller, we're likely to have a gamepad on id > 0, so pick this one as auto p1 instead
     }
-    side.controllerImage = new Gui2Image(windowManager, "image_controller" + int_to_str(i), 0, 0, 14, 10);
+    float iconH = 10.0f;
+    float iconW = (iconH * 1.75f) / windowManager->GetAspectRatio();
+    side.controllerImage = new Gui2Image(windowManager, "image_controller" + int_to_str(i), 0, 0, iconW, iconH);
     this->AddView(side.controllerImage);
     if (controllers.at(i)->GetDeviceType() == e_HIDeviceType_Gamepad) {
       side.controllerImage->LoadImage("media/menu/controller/controller_small.png");
@@ -72,9 +74,10 @@ ControllerSelectPage::~ControllerSelectPage() {
 }
 
 void ControllerSelectPage::SetImagePositions() {
+  float iconW = (10.0f * 1.75f) / windowManager->GetAspectRatio();
   for (unsigned int i = 0; i < sides.size(); i++) {
-    int x = 43 + sides.at(i).side * 25;
-    sides.at(i).controllerImage->SetPosition(x, 20 + i * 15);
+    float x = 50.0f - iconW * 0.5f + sides.at(i).side * 25.0f;
+    sides.at(i).controllerImage->SetPosition(x, 20.0f + i * 15.0f);
   }
 }
 

@@ -40,7 +40,7 @@ Gui2Image::Gui2Image(Gui2WindowManager *windowManager, const std::string &name,
     SDL_Surface *imageSurfTmp = IMG_Load(filename.c_str());
     imageSource = windowManager->CreateImage2D(name + "source", imageSurfTmp->w, imageSurfTmp->h, false);
 
-    boost::intrusive_ptr < Resource<Surface> > surfaceRes = imageSource->GetImage();
+    blunted::intrusive_ptr < Resource<Surface> > surfaceRes = imageSource->GetImage();
     surfaceRes->resourceMutex.lock();
     surfaceRes->GetResource()->SetData(imageSurfTmp);
     surfaceRes->resourceMutex.unlock();
@@ -51,10 +51,10 @@ Gui2Image::Gui2Image(Gui2WindowManager *windowManager, const std::string &name,
   void Gui2Image::Redraw() {
 
     // paste source image onto screen image
-    if (imageSource != boost::intrusive_ptr<Image2D>()) {
+    if (imageSource != blunted::intrusive_ptr<Image2D>()) {
 
       // get image
-      boost::intrusive_ptr < Resource<Surface> > surfaceRes = imageSource->GetImage();
+      blunted::intrusive_ptr < Resource<Surface> > surfaceRes = imageSource->GetImage();
       surfaceRes->resourceMutex.lock();
 
       SDL_Surface *imageSurfTmp = surfaceRes->GetResource()->GetData();
@@ -83,7 +83,7 @@ Gui2Image::Gui2Image(Gui2WindowManager *windowManager, const std::string &name,
 
   }
 
-  void Gui2Image::GetImages(std::vector < boost::intrusive_ptr<Image2D> > &target) {
+  void Gui2Image::GetImages(std::vector < blunted::intrusive_ptr<Image2D> > &target) {
     target.push_back(image);
     Gui2View::GetImages(target);
   }
@@ -102,10 +102,10 @@ Gui2Image::Gui2Image(Gui2WindowManager *windowManager, const std::string &name,
   void Gui2Image::SetZoom(float zoomx, float zoomy) {
 
     // paste source image onto screen image
-    if (imageSource != boost::intrusive_ptr<Image2D>()) {
+    if (imageSource != blunted::intrusive_ptr<Image2D>()) {
 
       // get image
-      boost::intrusive_ptr < Resource<Surface> > surfaceRes = imageSource->GetImage();
+      blunted::intrusive_ptr < Resource<Surface> > surfaceRes = imageSource->GetImage();
       surfaceRes->resourceMutex.lock();
 
       SDL_Surface *imageSurfTmp = surfaceRes->GetResource()->GetData();

@@ -126,7 +126,7 @@ namespace blunted {
     return tpitch;
   }
 
-  void Sound::SetSoundBuffer(boost::intrusive_ptr < Resource<SoundBuffer> > soundBuffer) {
+  void Sound::SetSoundBuffer(blunted::intrusive_ptr < Resource<SoundBuffer> > soundBuffer) {
     subjectMutex.lock();
 
     this->soundBuffer = soundBuffer;
@@ -144,8 +144,8 @@ namespace blunted {
     subjectMutex.unlock();
   }
 
-  boost::intrusive_ptr < Resource<SoundBuffer> > Sound::GetSoundBuffer() {
-    boost::mutex::scoped_lock blah(subjectMutex);
+  blunted::intrusive_ptr < Resource<SoundBuffer> > Sound::GetSoundBuffer() {
+    std::unique_lock<std::mutex> blah(subjectMutex);
     return soundBuffer;
   }
 

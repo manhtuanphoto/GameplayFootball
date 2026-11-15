@@ -6,40 +6,34 @@
 
 namespace blunted {
 
-  Command::Command(const std::string &name) : handled(false) {
-    this->name.SetData(name);
+  Command::Command(const std::string &name) : handled(false), name(name) {
   }
 
   Command::~Command() {
   }
 
-  bool Command::IsReady() {
-    boost::mutex::scoped_lock lock(mutex);
-    return handled;
-  }
-
   void Command::Reset() {
-    boost::mutex::scoped_lock lock(mutex);
-    handled = false;
+    std::lock_guard<std::mutex> lock(mutex);
+    handled.store(false, std::memory_order_release);
   }
 
   bool Command::Handle(void *caller) {
     bool result = Execute(caller);
 
-    boost::mutex::scoped_lock lock(mutex);
-    handled = true;
-    //lock.unlock(); // http://www.justsoftwaresolutions.co.uk/threading/implementing-a-thread-safe-queue-using-condition-variables.html
-    // edit: disabled, just to be sure no obscure bugs occur.
-    processed.notify_one();
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      handled.store(true, std::memory_order_release);
+    }
+    processed.notify_all();
+    OnHandled();
 
     return result;
   }
 
   void Command::Wait() {
-    boost::mutex::scoped_lock lock(mutex);
-    if (!handled) {
-      processed.wait(lock);
-    }
+    if (handled.load(std::memory_order_acquire)) return;
+    std::unique_lock<std::mutex> lock(mutex);
+    processed.wait(lock, [this]() { return handled.load(std::memory_order_relaxed); });
   }
 
 }

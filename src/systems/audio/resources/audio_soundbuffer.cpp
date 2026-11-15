@@ -24,7 +24,7 @@ namespace blunted {
     assert(renderer);
     assert(wavData);
 
-    boost::intrusive_ptr<AudioRendererMessage_CreateAudioSoundBuffer> createAudioSoundBuffer(new AudioRendererMessage_CreateAudioSoundBuffer(wavData));
+    blunted::intrusive_ptr<AudioRendererMessage_CreateAudioSoundBuffer> createAudioSoundBuffer(new AudioRendererMessage_CreateAudioSoundBuffer(wavData));
     renderer->messageQueue.PushMessage(createAudioSoundBuffer);
     createAudioSoundBuffer->Wait();
 
@@ -36,7 +36,7 @@ namespace blunted {
   void AudioSoundBuffer::DeleteAudioSoundBuffer() {
     if (audioSoundBufferID != -1) {
       assert(renderer);
-      boost::intrusive_ptr<AudioRendererMessage_DeleteAudioSoundBuffer> deleteAudioSoundBuffer(new AudioRendererMessage_DeleteAudioSoundBuffer(audioSoundBufferID));
+      blunted::intrusive_ptr<AudioRendererMessage_DeleteAudioSoundBuffer> deleteAudioSoundBuffer(new AudioRendererMessage_DeleteAudioSoundBuffer(audioSoundBufferID));
       renderer->messageQueue.PushMessage(deleteAudioSoundBuffer);
       deleteAudioSoundBuffer->Wait();
 

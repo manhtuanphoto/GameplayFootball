@@ -26,15 +26,15 @@ namespace blunted {
         observers.clear();
       }
 
-      virtual void Attach(boost::intrusive_ptr<T> observer, void *thisPtr = 0) {
+      virtual void Attach(blunted::intrusive_ptr<T> observer, void *thisPtr = 0) {
 
         observer->SetSubjectPtr(thisPtr);
 
         observers.push_back(observer);
       }
 
-      virtual void Detach(boost::intrusive_ptr<T> observer) {
-        typename std::vector < boost::intrusive_ptr<T> >::iterator o_iter = observers.begin();
+      virtual void Detach(blunted::intrusive_ptr<T> observer) {
+        typename std::vector < blunted::intrusive_ptr<T> >::iterator o_iter = observers.begin();
         while (o_iter != observers.end()) {
           if ((*o_iter).get() == observer.get()) {
             (*o_iter).reset();
@@ -46,21 +46,21 @@ namespace blunted {
       }
 
       virtual void DetachAll() {
-        typename std::vector < boost::intrusive_ptr<T> >::iterator o_iter = observers.begin();
+        typename std::vector < blunted::intrusive_ptr<T> >::iterator o_iter = observers.begin();
         while (o_iter != observers.end()) {
           (*o_iter).reset();
           o_iter = observers.erase(o_iter);
         }
       }
 
-      std::vector < boost::intrusive_ptr<T> > GetObservers() {
+      std::vector < blunted::intrusive_ptr<T> > GetObservers() {
         return observers;
       }
 
-      mutable boost::mutex subjectMutex;
+      mutable std::mutex subjectMutex;
 
     protected:
-      std::vector < boost::intrusive_ptr<T> > observers;
+      std::vector < blunted::intrusive_ptr<T> > observers;
 
   };
 

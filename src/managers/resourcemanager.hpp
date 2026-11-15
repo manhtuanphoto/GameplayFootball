@@ -15,6 +15,9 @@
 
 #include "managers/environmentmanager.hpp"
 
+#include <filesystem>
+#include <vector>
+
 namespace blunted {
 
   template <typename T>
@@ -27,9 +30,15 @@ namespace blunted {
       ResourceManager(const std::string &typeDescription) : typeDescription(typeDescription) {};
 
       ~ResourceManager() {
+        std::vector<blunted::intrusive_ptr<Resource<T>>> deferredRelease;
         resources.Lock();
+        deferredRelease.reserve(resources.data.size());
+        for (auto &kv : resources.data) {
+          deferredRelease.push_back(kv.second);
+        }
         resources.data.clear();
         resources.Unlock();
+        deferredRelease.clear();
         loaders.clear();
       };
 
@@ -38,18 +47,35 @@ namespace blunted {
         loaders.insert(std::make_pair(extension, loader));
       }
 
-      boost::intrusive_ptr < Resource<T> > Fetch(const std::string &filename, bool load = true, bool useExisting = true) {
+      blunted::intrusive_ptr < Resource<T> > Fetch(const std::string &filename, bool load = true, bool useExisting = true) {
         bool foo;
         return Fetch(filename, load, foo, useExisting);
       }
 
-      boost::intrusive_ptr < Resource<T> > Fetch(const std::string &filename, bool load, bool &alreadyThere, bool useExisting) {
-        std::string adaptedFilename = get_file_name(filename);
+      blunted::intrusive_ptr < Resource<T> > Fetch(const std::string &filename, bool load, bool &alreadyThere, bool useExisting) {
+        std::string effectiveFilename = filename;
+        if (load) {
+          std::string extCheck = get_file_extension(effectiveFilename);
+          std::transform(extCheck.begin(), extCheck.end(), extCheck.begin(), ::tolower);
+          if (extCheck == "ase" && (loaders.find("glb") != loaders.end() || loaders.find("gltf") != loaders.end())) {
+            size_t dotPos = effectiveFilename.find_last_of('.');
+            if (dotPos != std::string::npos) {
+              std::string stem = effectiveFilename.substr(0, dotPos);
+              std::error_code ec;
+              if (loaders.find("glb") != loaders.end() && std::filesystem::exists(stem + ".glb", ec)) {
+                effectiveFilename = stem + ".glb";
+              } else if (loaders.find("gltf") != loaders.end() && std::filesystem::exists(stem + ".gltf", ec)) {
+                effectiveFilename = stem + ".gltf";
+              }
+            }
+          }
+        }
+        std::string adaptedFilename = get_file_name(effectiveFilename);
 
         // resource already loaded?
 
         bool success = false;
-        boost::intrusive_ptr < Resource<T> > foundResource;
+        blunted::intrusive_ptr < Resource<T> > foundResource;
 
         if (useExisting) {
           foundResource = Find(adaptedFilename, success);
@@ -69,18 +95,18 @@ namespace blunted {
           // create resource
 
           alreadyThere = false;
-          boost::intrusive_ptr < Resource <T> > resource(new Resource<T>(adaptedFilename));
+          blunted::intrusive_ptr < Resource <T> > resource(new Resource<T>(adaptedFilename));
 
           // try to load
 
           if (load) {
-            std::string extension = get_file_extension(filename);
+            std::string extension = get_file_extension(effectiveFilename);
             std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
             typename std::map < std::string, Loader<T>* >::iterator iter = loaders.find(extension);
             if (iter != loaders.end()) {
-              (*iter).second->Load(filename, resource);
+              (*iter).second->Load(effectiveFilename, resource);
             } else {
-              Log(e_FatalError, "ResourceManager<>", "Load", "There is no loader for " + filename);
+              Log(e_FatalError, "ResourceManager<>", "Load", "There is no loader for " + effectiveFilename);
             }
           }
           Register(resource);
@@ -88,29 +114,30 @@ namespace blunted {
         }
       }
 
-      boost::intrusive_ptr < Resource<T> > FetchCopy(const std::string &filename, const std::string &newName) {
-        boost::intrusive_ptr < Resource<T> > resource = Fetch(filename);
+      blunted::intrusive_ptr < Resource<T> > FetchCopy(const std::string &filename, const std::string &newName) {
+        blunted::intrusive_ptr < Resource<T> > resource = Fetch(filename);
 
         // todo: this lock is probably needed, but slows down everything very much.. find out why
         resource->resourceMutex.lock();
-        boost::intrusive_ptr < Resource<T> > resourceCopy(new Resource<T>(*resource, newName));
+        blunted::intrusive_ptr < Resource<T> > resourceCopy(new Resource<T>(*resource, newName));
         resource->resourceMutex.unlock();
 
         Register(resourceCopy);
         return resourceCopy;
       }
 
-      boost::intrusive_ptr < Resource<T> > FetchCopy(const std::string &filename, const std::string &newName, bool &alreadyThere) {
-        boost::intrusive_ptr < Resource<T> > resourceCopy;
-        if (resources.data.find(newName) != resources.data.end()) {
-          //Log(e_Warning, "ResourceManager", "FetchCopy", "Duplicate key '" + newName + "' - returning existing resource instead of copy (maybe just use Fetch() instead?)");
-          resourceCopy = Fetch(newName, false, true);
+      blunted::intrusive_ptr < Resource<T> > FetchCopy(const std::string &filename, const std::string &newName, bool &alreadyThere) {
+        bool existingFound = false;
+        blunted::intrusive_ptr < Resource<T> > resourceCopy = Find(newName, existingFound);
+        if (existingFound) {
+          alreadyThere = true;
+          return resourceCopy;
         } else {
-          boost::intrusive_ptr < Resource<T> > resource = Fetch(filename, true, alreadyThere, true);
+          blunted::intrusive_ptr < Resource<T> > resource = Fetch(filename, true, alreadyThere, true);
 
           // todo: this lock is probably needed, but slows down everything very much.. find out why
           resource->resourceMutex.lock();
-          resourceCopy = boost::intrusive_ptr < Resource<T> >(new Resource<T>(*resource, newName));
+          resourceCopy = blunted::intrusive_ptr < Resource<T> >(new Resource<T>(*resource, newName));
           resource->resourceMutex.unlock();
 
           Register(resourceCopy);
@@ -120,19 +147,15 @@ namespace blunted {
       }
 
       void RemoveUnused() {
-        // periodically execute this cleanup code somewhere
-        // currently invoked from scheduler, could be a user task?
-        // as if it were a service..
-        // would be slower, but somewhat cooler :p
-
-        // cleanup
+        // Defer intrusive_ptr destruction until after unlocking `resources` so GL DeleteTexture->Wait() never blocks holding this mutex
+        std::vector<blunted::intrusive_ptr<Resource<T>>> deferredRelease;
 
         resources.Lock();
 
-        typename std::map < std::string, boost::intrusive_ptr< Resource<T> > >::iterator resIter = resources.data.begin();
+        typename std::map < std::string, blunted::intrusive_ptr< Resource<T> > >::iterator resIter = resources.data.begin();
         while (resIter != resources.data.end()) {
           if (resIter->second->GetRefCount() == 1) {
-            //printf("removing unused %s resource '%s'\n", typeDescription.c_str(), resIter->second->GetIdentString().c_str());
+            deferredRelease.push_back(resIter->second);
             resources.data.erase(resIter++);
           } else {
             ++resIter;
@@ -140,26 +163,27 @@ namespace blunted {
         }
 
         resources.Unlock();
+        deferredRelease.clear();
       }
 
     protected:
 
-      boost::intrusive_ptr < Resource<T> > Find(const std::string &identString, bool &success) {
+      blunted::intrusive_ptr < Resource<T> > Find(const std::string &identString, bool &success) {
         resources.Lock();
-        typename std::map < std::string, boost::intrusive_ptr< Resource<T> > >::iterator resIter = resources.data.find(identString);
+        typename std::map < std::string, blunted::intrusive_ptr< Resource<T> > >::iterator resIter = resources.data.find(identString);
         if (resIter != resources.data.end()) {
           success = true;
-          boost::intrusive_ptr < Resource<T> > resource = (*resIter).second;
+          blunted::intrusive_ptr < Resource<T> > resource = (*resIter).second;
           resources.Unlock();
           return resource;
         } else {
           success = false;
           resources.Unlock();
-          return boost::intrusive_ptr < Resource<T> >();
+          return blunted::intrusive_ptr < Resource<T> >();
         }
       }
 
-      void Register(boost::intrusive_ptr < Resource<T> > resource) {
+      void Register(blunted::intrusive_ptr < Resource<T> > resource) {
 
         resources.Lock();
 
@@ -177,7 +201,7 @@ namespace blunted {
 
       std::map < std::string, Loader<T>* > loaders;
 
-      Lockable < std::map < std::string, boost::intrusive_ptr < Resource <T> > > > resources;
+      Lockable < std::map < std::string, blunted::intrusive_ptr < Resource <T> > > > resources;
 
       std::string typeDescription;
 

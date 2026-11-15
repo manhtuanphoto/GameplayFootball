@@ -18,7 +18,7 @@ namespace blunted {
     public:
       virtual ~ISystemObject() {};
 
-      virtual boost::intrusive_ptr<Interpreter> GetInterpreter(e_ObjectType objectType) = 0;
+      virtual blunted::intrusive_ptr<Interpreter> GetInterpreter(e_ObjectType objectType) = 0;
 
     protected:
 

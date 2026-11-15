@@ -19,7 +19,7 @@ namespace blunted {
       AudioObject(AudioScene *audioScene);
       virtual ~AudioObject();
 
-      virtual boost::intrusive_ptr<Interpreter> GetInterpreter(e_ObjectType objectType) = 0;
+      virtual blunted::intrusive_ptr<Interpreter> GetInterpreter(e_ObjectType objectType) = 0;
 
       AudioScene *GetAudioScene();
 

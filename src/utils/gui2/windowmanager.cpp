@@ -11,7 +11,7 @@
 
 namespace blunted {
 
-  Gui2WindowManager::Gui2WindowManager(boost::shared_ptr<Scene2D> scene2D, float aspectRatio, float margin) : scene2D(scene2D), aspectRatio(aspectRatio), margin(margin), pageFactory(0) {
+  Gui2WindowManager::Gui2WindowManager(std::shared_ptr<Scene2D> scene2D, float aspectRatio, float margin) : scene2D(scene2D), aspectRatio(aspectRatio), margin(margin), pageFactory(0) {
     root = new Gui2Root(this, "root", 0, 0, 100, 100);
     timeStep_ms = 10;
 
@@ -44,12 +44,12 @@ namespace blunted {
     scene2D->GetContextSize(contextW, contextH, bpp);
     SDL_Surface *sdlSurface = CreateSDLSurface(contextW, contextH);
 
-    boost::intrusive_ptr < Resource <Surface> > resource = ResourceManagerPool::GetInstance().GetManager<Surface>(e_ResourceType_Surface)->Fetch("gui2_blackoutbackground", false, true);
+    blunted::intrusive_ptr < Resource <Surface> > resource = ResourceManagerPool::GetInstance().GetManager<Surface>(e_ResourceType_Surface)->Fetch("gui2_blackoutbackground", false, true);
     Surface *surface = resource->GetResource();
 
     surface->SetData(sdlSurface);
 
-    blackoutBackground = boost::static_pointer_cast<Image2D>(ObjectFactory::GetInstance().CreateObject("gui2_blackoutbackground", e_ObjectType_Image2D));
+    blackoutBackground = blunted::static_pointer_cast<Image2D>(ObjectFactory::GetInstance().CreateObject("gui2_blackoutbackground", e_ObjectType_Image2D));
     scene2D->CreateSystemObjects(blackoutBackground);
     blackoutBackground->SetImage(resource);
     blackoutBackground->DrawRectangle(0, 0, contextW, contextH, Vector3(0, 0, 0), 255);
@@ -77,11 +77,11 @@ namespace blunted {
     }
     pendingDelete.clear();
 
-    std::vector < boost::intrusive_ptr<Image2D> > images;
+    std::vector < blunted::intrusive_ptr<Image2D> > images;
     root->GetImages(images);
     for (unsigned int i = 0; i < images.size(); i++) {
-      boost::intrusive_ptr<Image2D> &image = images.at(i);
-      if (image != boost::intrusive_ptr<Image2D>()) {
+      blunted::intrusive_ptr<Image2D> &image = images.at(i);
+      if (image != blunted::intrusive_ptr<Image2D>()) {
         Log(e_Warning, "Gui2WindowManager", "Exit", "GUI2 image still here on wm exit: " + image->GetName());
       }
     }
@@ -166,16 +166,16 @@ namespace blunted {
     return pixels / (effectiveH * 0.01f);
   }
 
-  boost::intrusive_ptr<Image2D> Gui2WindowManager::CreateImage2D(const std::string &name, int width, int height, bool sceneRegister) {
+  blunted::intrusive_ptr<Image2D> Gui2WindowManager::CreateImage2D(const std::string &name, int width, int height, bool sceneRegister) {
 
     SDL_Surface *sdlSurface = CreateSDLSurface(width, height);
 
-    boost::intrusive_ptr < Resource <Surface> > resource = ResourceManagerPool::GetInstance().GetManager<Surface>(e_ResourceType_Surface)->Fetch(name, false, true);
+    blunted::intrusive_ptr < Resource <Surface> > resource = ResourceManagerPool::GetInstance().GetManager<Surface>(e_ResourceType_Surface)->Fetch(name, false, true);
     Surface *surface = resource->GetResource();
 
     surface->SetData(sdlSurface);
 
-    boost::intrusive_ptr<Image2D> image = boost::static_pointer_cast<Image2D>(ObjectFactory::GetInstance().CreateObject(name, e_ObjectType_Image2D));
+    blunted::intrusive_ptr<Image2D> image = blunted::static_pointer_cast<Image2D>(ObjectFactory::GetInstance().CreateObject(name, e_ObjectType_Image2D));
     if (sceneRegister) scene2D->CreateSystemObjects(image);
     image->SetImage(resource);
 
@@ -193,11 +193,11 @@ namespace blunted {
   }
 
   void Gui2WindowManager::UpdateImagePosition(Gui2View *view) const {
-    std::vector < boost::intrusive_ptr<Image2D> > images;
+    std::vector < blunted::intrusive_ptr<Image2D> > images;
     view->GetImages(images);
     for (unsigned int i = 0; i < images.size(); i++) {
-      boost::intrusive_ptr<Image2D> &image = images.at(i);
-      if (image != boost::intrusive_ptr<Image2D>()) {
+      blunted::intrusive_ptr<Image2D> &image = images.at(i);
+      if (image != blunted::intrusive_ptr<Image2D>()) {
         float x_percent, y_percent;
         int x, y, w, h;
         view->GetDerivedPosition(x_percent, y_percent);
@@ -207,7 +207,7 @@ namespace blunted {
     }
   }
 
-  void Gui2WindowManager::RemoveImage(boost::intrusive_ptr<Image2D> image) const {
+  void Gui2WindowManager::RemoveImage(blunted::intrusive_ptr<Image2D> image) const {
     scene2D->DeleteObject(image);
   }
 
@@ -221,25 +221,33 @@ namespace blunted {
 
   void Gui2WindowManager::MarkForDeletion(Gui2View *view) {
     pendingDelete.push_back(view);
+    zPriorityDirty = true;
+  }
+
+  void Gui2WindowManager::UpdateZPriorityIfNeeded() {
+    if (zPriorityDirty) {
+      zPriorityDirty = false;
+      root->SetRecursiveZPriority(0);
+    }
   }
 
   void Gui2WindowManager::Show(Gui2View *view) {
-    std::vector < boost::intrusive_ptr<Image2D> > images;
+    std::vector < blunted::intrusive_ptr<Image2D> > images;
     view->GetImages(images);
     for (unsigned int i = 0; i < images.size(); i++) {
-      boost::intrusive_ptr<Image2D> &image = images.at(i);
-      if (image != boost::intrusive_ptr<Image2D>()) {
+      blunted::intrusive_ptr<Image2D> &image = images.at(i);
+      if (image != blunted::intrusive_ptr<Image2D>()) {
         image->Enable();
       }
     }
   }
 
   void Gui2WindowManager::Hide(Gui2View *view) {
-    std::vector < boost::intrusive_ptr<Image2D> > images;
+    std::vector < blunted::intrusive_ptr<Image2D> > images;
     view->GetImages(images);
     for (unsigned int i = 0; i < images.size(); i++) {
-      boost::intrusive_ptr<Image2D> &image = images.at(i);
-      if (image != boost::intrusive_ptr<Image2D>()) {
+      blunted::intrusive_ptr<Image2D> &image = images.at(i);
+      if (image != blunted::intrusive_ptr<Image2D>()) {
         image->Disable();
       }
     }

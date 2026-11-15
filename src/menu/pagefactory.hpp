@@ -18,6 +18,8 @@ enum e_PageID {
   e_PageID_Settings,
   e_PageID_ControllerSelect,
   e_PageID_TeamSelect,
+  e_PageID_Sandbox,
+  e_PageID_FreeKick,
   e_PageID_MatchOptions,
   e_PageID_LoadingMatch,
   e_PageID_MatchPhase,

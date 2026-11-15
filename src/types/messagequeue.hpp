@@ -8,38 +8,64 @@
 #include "defines.hpp"
 
 #include "base/properties.hpp"
-
 #include "types/command.hpp"
-
 #include "managers/environmentmanager.hpp"
 
 namespace blunted {
 
-  template <typename T = boost::intrusive_ptr<Command> >
+  template <typename T = intrusive_ptr<Command>>
   class MessageQueue {
 
     public:
       MessageQueue() {}
       virtual ~MessageQueue() {}
 
+      void EnableInlineExecutionOnCurrentThread(void *caller) {
+        inlineThreadId_ = std::this_thread::get_id();
+        inlineCaller_ = caller;
+        inlineEnabled_.store(true, std::memory_order_release);
+      }
+
+      void DisableInlineExecution() {
+        inlineEnabled_.store(false, std::memory_order_release);
+      }
+
       inline void PushMessage(T message, bool notify = true) {
-        boost::mutex::scoped_lock lock(queue.mutex);
-        queue.data.push_back(message);
-        lock.unlock();
+        if constexpr (std::is_same_v<T, intrusive_ptr<Command>>) {
+          if (inlineEnabled_.load(std::memory_order_acquire) &&
+              std::this_thread::get_id() == inlineThreadId_) {
+            for (;;) {
+              T queued;
+              {
+                std::unique_lock<std::mutex> lock(queue.mutex);
+                if (queue.data.empty()) break;
+                queued = queue.data.front();
+                queue.data.pop_front();
+              }
+              if (queued) queued->Handle(inlineCaller_);
+            }
+            if (message) message->Handle(inlineCaller_);
+            return;
+          }
+        }
+
+        {
+          std::unique_lock<std::mutex> lock(queue.mutex);
+          queue.data.push_back(std::move(message));
+        }
         if (notify) NotifyWaiting(e_NotificationSubject_One);
       }
 
       inline void NotifyWaiting(e_NotificationSubject notificationSubject = e_NotificationSubject_All) {
-        boost::mutex::scoped_lock lock(queue.mutex);
         if (notificationSubject == e_NotificationSubject_One) messageNotification.notify_one();
         if (notificationSubject == e_NotificationSubject_All) messageNotification.notify_all();
       }
 
       inline T GetMessage(bool &MsgAvail) {
         T message;
-        boost::mutex::scoped_lock lock(queue.mutex);
-        if (queue.data.size() > 0) {
-          message = *queue.data.begin();
+        std::unique_lock<std::mutex> lock(queue.mutex);
+        if (!queue.data.empty()) {
+          message = std::move(queue.data.front());
           queue.data.pop_front();
           MsgAvail = true;
         } else {
@@ -49,7 +75,7 @@ namespace blunted {
       }
 
       inline void Purge() {
-        boost::mutex::scoped_lock lock(queue.mutex);
+        std::unique_lock<std::mutex> lock(queue.mutex);
         queue.data.clear();
       }
 
@@ -59,26 +85,23 @@ namespace blunted {
       }
 
       inline T WaitForMessage(bool &isMessage, int timeout_ms = -1) {
-
         isMessage = false;
         T message;
 
-        boost::mutex::scoped_lock lock(queue.mutex);
+        std::unique_lock<std::mutex> lock(queue.mutex);
         while (!isMessage) {
-          // cannot use queue.WaitForNotification, because its scoped lock unlocks on return
-          if (queue.data.size() == 0) {
-
+          if (queue.data.empty()) {
             if (timeout_ms == -1) {
               messageNotification.wait(lock);
             } else {
-              boost::system_time tAbsoluteTime = boost::get_system_time() + boost::posix_time::milliseconds(timeout_ms);
-              bool received = messageNotification.timed_wait(lock, tAbsoluteTime);
-              if (!received) return message; // timeout
+              if (messageNotification.wait_for(lock, std::chrono::milliseconds(timeout_ms)) == std::cv_status::timeout &&
+                  queue.data.empty()) {
+                return message;
+              }
             }
-
           }
-          if (queue.data.size() > 0) {
-            message = *queue.data.begin();
+          if (!queue.data.empty()) {
+            message = std::move(queue.data.front());
             queue.data.pop_front();
             isMessage = true;
           }
@@ -88,14 +111,18 @@ namespace blunted {
 
       inline int GetPending() {
         queue.Lock();
-        int size = queue.data.size();
+        int size = static_cast<int>(queue.data.size());
         queue.Unlock();
         return size;
       }
 
     protected:
-      Lockable < std::list < T > > queue;
-      boost::condition messageNotification;
+      Lockable<std::deque<T>> queue;
+      std::condition_variable messageNotification;
+
+      std::thread::id inlineThreadId_;
+      void *inlineCaller_ = nullptr;
+      std::atomic<bool> inlineEnabled_{false};
 
   };
 

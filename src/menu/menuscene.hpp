@@ -40,15 +40,15 @@ class MenuScene {
     void SetTargetLocation(const Vector3 &position, const Quaternion &orientation);
 
   protected:
-    boost::intrusive_ptr<Node> containerNode;
-    boost::intrusive_ptr<Camera> camera;
-    boost::intrusive_ptr<Light> mainLight;
-    boost::intrusive_ptr<Geometry> geom;
+    blunted::intrusive_ptr<Node> containerNode;
+    blunted::intrusive_ptr<Camera> camera;
+    blunted::intrusive_ptr<Light> mainLight;
+    blunted::intrusive_ptr<Geometry> geom;
 
-    boost::intrusive_ptr<Light> hoverLights[3];
+    blunted::intrusive_ptr<Light> hoverLights[3];
     Vector3 hoverLightPosition;
 
-    boost::shared_ptr<Scene3D> scene3D;
+    std::shared_ptr<Scene3D> scene3D;
 
     MenuSceneLocation sourceLocation;
     MenuSceneLocation targetLocation;

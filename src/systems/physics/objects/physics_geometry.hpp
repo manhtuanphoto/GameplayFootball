@@ -21,15 +21,15 @@ namespace blunted {
       PhysicsGeometry(PhysicsScene *physicsScene);
       virtual ~PhysicsGeometry();
 
-      virtual boost::intrusive_ptr<Interpreter> GetInterpreter(e_ObjectType objectType);
+      virtual blunted::intrusive_ptr<Interpreter> GetInterpreter(e_ObjectType objectType);
 
       virtual void SetPosition(const Vector3 &newPosition);
       Vector3 GetPosition() const;
       virtual void SetRotation(const Quaternion &newRotation);
       Quaternion GetRotation() const;
 
-      //std::vector < boost::shared_ptr<VertexBufferIndex> > vertexBufferIndices;
-      //boost::shared_ptr < Resource<VertexBuffer> > vertexBuffer;
+      //std::vector < std::shared_ptr<VertexBufferIndex> > vertexBufferIndices;
+      //std::shared_ptr < Resource<VertexBuffer> > vertexBuffer;
 
       IPhysicsActor *actor;
       IPhysicsCollisionMesh *mesh;
@@ -48,8 +48,8 @@ namespace blunted {
 
       virtual e_SystemType GetSystemType() const { return e_SystemType_Physics; }
 
-      virtual void OnLoad(boost::intrusive_ptr<Geometry> geometry);
-      virtual void OnUpdateGeometry(boost::intrusive_ptr<Geometry> geometry, bool updateMaterials) {}; // todo!
+      virtual void OnLoad(blunted::intrusive_ptr<Geometry> geometry);
+      virtual void OnUpdateGeometry(blunted::intrusive_ptr<Geometry> geometry, bool updateMaterials) {}; // todo!
       virtual void OnUnload();
       inline virtual void OnMove(const Vector3 &position);
       inline virtual void OnRotate(const Quaternion &rotation);

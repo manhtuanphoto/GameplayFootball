@@ -40,7 +40,7 @@ MatchOptionsPage::MatchOptionsPage(Gui2WindowManager *windowManager, const Gui2P
   this->AddView(grid);
   grid->Show();
 
-  buttonStart->sig_OnClick.connect(boost::bind(&MatchOptionsPage::GoLoadingMatchPage, this));
+  buttonStart->sig_OnClick.connect(blunted::Bind(&MatchOptionsPage::GoLoadingMatchPage, this));
 
   buttonStart->SetFocus();
 

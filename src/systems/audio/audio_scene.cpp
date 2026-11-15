@@ -25,20 +25,20 @@ namespace blunted {
     return audioSystem;
   }
 
-  boost::intrusive_ptr<ISceneInterpreter> AudioScene::GetInterpreter(e_SceneType sceneType) {
+  blunted::intrusive_ptr<ISceneInterpreter> AudioScene::GetInterpreter(e_SceneType sceneType) {
     if (sceneType == e_SceneType_Scene2D) {
-      boost::intrusive_ptr<AudioScene_Scene2DInterpreter> scene2DInterpreter(new AudioScene_Scene2DInterpreter(this));
+      blunted::intrusive_ptr<AudioScene_Scene2DInterpreter> scene2DInterpreter(new AudioScene_Scene2DInterpreter(this));
       return scene2DInterpreter;
     }
     if (sceneType == e_SceneType_Scene3D) {
-      boost::intrusive_ptr<AudioScene_Scene3DInterpreter> scene3DInterpreter(new AudioScene_Scene3DInterpreter(this));
+      blunted::intrusive_ptr<AudioScene_Scene3DInterpreter> scene3DInterpreter(new AudioScene_Scene3DInterpreter(this));
       return scene3DInterpreter;
     }
     Log(e_FatalError, "AudioScene", "GetInterpreter", "No appropriate interpreter found for this SceneType");
-    return boost::intrusive_ptr<AudioScene_Scene3DInterpreter>();
+    return blunted::intrusive_ptr<AudioScene_Scene3DInterpreter>();
   }
 
-  ISystemObject *AudioScene::CreateSystemObject(boost::intrusive_ptr<Object> object) {
+  ISystemObject *AudioScene::CreateSystemObject(blunted::intrusive_ptr<Object> object) {
     assert(object.get());
 
     // todo: system scene shouldn't know about object types, i guess? maybe via a Command
@@ -70,7 +70,7 @@ namespace blunted {
     caller = 0;
   }
 
-  ISystemObject *AudioScene_Scene3DInterpreter::CreateSystemObject(boost::intrusive_ptr<Object> object) {
+  ISystemObject *AudioScene_Scene3DInterpreter::CreateSystemObject(blunted::intrusive_ptr<Object> object) {
     return caller->CreateSystemObject(object);
   }
 
@@ -88,7 +88,7 @@ namespace blunted {
     caller = 0;
   }
 
-  ISystemObject *AudioScene_Scene2DInterpreter::CreateSystemObject(boost::intrusive_ptr<Object> object) {
+  ISystemObject *AudioScene_Scene2DInterpreter::CreateSystemObject(blunted::intrusive_ptr<Object> object) {
     return caller->CreateSystemObject(object);
   }
 

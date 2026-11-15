@@ -18,7 +18,7 @@ namespace blunted {
     //printf("ERASING VERTEXBUFFER ID #%i.. ", vertexBufferID);
 
     if (vertexBufferID.bufferID != -1) {
-      boost::intrusive_ptr<Renderer3DMessage_DeleteVertexBuffer> deleteVertexBuffer(new Renderer3DMessage_DeleteVertexBuffer(vertexBufferID));
+      blunted::intrusive_ptr<Renderer3DMessage_DeleteVertexBuffer> deleteVertexBuffer(new Renderer3DMessage_DeleteVertexBuffer(vertexBufferID));
       renderer3D->messageQueue.PushMessage(deleteVertexBuffer);
       deleteVertexBuffer->Wait();
 
@@ -46,12 +46,19 @@ namespace blunted {
     vertexCount = tmpVertexCount;
   }
 
+  void VertexBuffer::SetSkinData(const std::vector<float> &newSkinData) {
+    if (newSkinData.size() != skinData.size()) {
+      sizeChanged = true;
+    }
+    skinData = newSkinData;
+  }
+
   VertexBufferID VertexBuffer::CreateOrUpdateVertexBuffer(Renderer3D *renderer3D, bool dynamicBuffer) {
     this->renderer3D = renderer3D;
 
     // changed size? delete vbo first!
     if (vertexBufferID.bufferID != -1 && sizeChanged) {
-      boost::intrusive_ptr<Renderer3DMessage_DeleteVertexBuffer> deleteVertexBuffer(new Renderer3DMessage_DeleteVertexBuffer(vertexBufferID));
+      blunted::intrusive_ptr<Renderer3DMessage_DeleteVertexBuffer> deleteVertexBuffer(new Renderer3DMessage_DeleteVertexBuffer(vertexBufferID));
       renderer3D->messageQueue.PushMessage(deleteVertexBuffer);
       deleteVertexBuffer->Wait();
       vertexBufferID.bufferID = -1;
@@ -67,7 +74,7 @@ namespace blunted {
       if (dynamicBuffer) usage = e_VertexBufferUsage_DynamicDraw;
 
       assert(vertices != 0);
-      boost::intrusive_ptr<Renderer3DMessage_CreateVertexBuffer> createVertexBuffer(new Renderer3DMessage_CreateVertexBuffer(vertices, verticesDataSize, indices, usage));
+      blunted::intrusive_ptr<Renderer3DMessage_CreateVertexBuffer> createVertexBuffer(new Renderer3DMessage_CreateVertexBuffer(vertices, verticesDataSize, indices, usage, skinData));
       renderer3D->messageQueue.PushMessage(createVertexBuffer);
       createVertexBuffer->Wait();
 
@@ -76,7 +83,7 @@ namespace blunted {
       //printf("creerle\n");
     } else {
       assert(vertices != 0);
-      boost::intrusive_ptr<Renderer3DMessage_UpdateVertexBuffer> updateVertexBuffer(new Renderer3DMessage_UpdateVertexBuffer(vertexBufferID, vertices, verticesDataSize));
+      blunted::intrusive_ptr<Renderer3DMessage_UpdateVertexBuffer> updateVertexBuffer(new Renderer3DMessage_UpdateVertexBuffer(vertexBufferID, vertices, verticesDataSize));
       renderer3D->messageQueue.PushMessage(updateVertexBuffer);
       updateVertexBuffer->Wait(); // todo: make the vertices* stuff lockable so we don't have to wait here
 

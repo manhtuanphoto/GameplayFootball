@@ -24,14 +24,14 @@ namespace blunted {
 
   void AudioSystem::Initialize(const Properties &config) {
 
-    audioSoundBufferResourceManager = boost::shared_ptr < ResourceManager<AudioSoundBuffer> > (new ResourceManager<AudioSoundBuffer>("audiosoundbuffer"));
+    audioSoundBufferResourceManager = std::shared_ptr < ResourceManager<AudioSoundBuffer> > (new ResourceManager<AudioSoundBuffer>("audiosoundbuffer"));
     ResourceManagerPool::GetInstance().RegisterManager(e_ResourceType_AudioSoundBuffer, audioSoundBufferResourceManager);
 
     // start thread for renderer
     if (config.Get("audio_renderer", "openal") == "openal") rendererTask = new OpenALRenderer();
     rendererTask->Run();
 
-    boost::intrusive_ptr<AudioRendererMessage_CreateContext> createContext(new AudioRendererMessage_CreateContext());
+    blunted::intrusive_ptr<AudioRendererMessage_CreateContext> createContext(new AudioRendererMessage_CreateContext());
     rendererTask->messageQueue.PushMessage(createContext);
     createContext->Wait();
 
@@ -47,7 +47,7 @@ namespace blunted {
     audioSoundBufferResourceManager.reset();
 
     // shutdown renderer thread
-    boost::intrusive_ptr<Message_Shutdown> RendererShutdown(new Message_Shutdown());
+    blunted::intrusive_ptr<Message_Shutdown> RendererShutdown(new Message_Shutdown());
     rendererTask->messageQueue.PushMessage(RendererShutdown);
     RendererShutdown->Wait();
 
@@ -60,7 +60,7 @@ namespace blunted {
     return systemType;
   }
 
-  ISystemScene *AudioSystem::CreateSystemScene(boost::shared_ptr<IScene> scene) {
+  ISystemScene *AudioSystem::CreateSystemScene(std::shared_ptr<IScene> scene) {
     if (scene->GetSceneType() == e_SceneType_Scene2D) {
       AudioScene *audioScene = new AudioScene(this);
       scene->Attach(audioScene->GetInterpreter(e_SceneType_Scene2D));

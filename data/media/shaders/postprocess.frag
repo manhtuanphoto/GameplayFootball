@@ -38,6 +38,13 @@ vec3 AlternateContrast(vec3 color, float bias) {
   return color * (1.0f - bias) + (-cos(clamp(color, 0.0f, 1.0f) * 3.14159265f) * 0.5f + 0.5f) * bias;
 }
 
+vec3 LinearToSRGB(vec3 linearCol) {
+  vec3 c = clamp(linearCol, 0.0f, 1.0f);
+  vec3 lo = c * 12.92f;
+  vec3 hi = 1.055f * pow(c, vec3(1.0f / 2.4f)) - 0.055f;
+  return mix(lo, hi, step(vec3(0.0031308f), c));
+}
+
 vec3 Compress(vec3 color, float startThreshold, float endThreshold) {
   float range = endThreshold - startThreshold;
   float compressedRange = 1.0f - startThreshold;
@@ -59,30 +66,12 @@ void main(void) {
   texCoord.x /= contextWidth;
   texCoord.y /= contextHeight;
 
-  vec4 accum = texture2D(map_accumulation, texCoord);
-  vec3 base = accum.rgb;
+  float depth = texture2D(map_depth, texCoord).x;
+  vec3 skyHorizonColor = vec3(0.78f, 0.85f, 0.94f);
 
-  vec4 modifier = texture2D(map_modifier, texCoord);
-
-  // edge blur
-  if (modifier.r > 0.0) {
-    vec3 smoothPixel = vec3(0);
-    smoothPixel += texture2D(map_accumulation, texCoord + vec2(0, 1 / contextHeight)).xyz;
-    smoothPixel += texture2D(map_accumulation, texCoord + vec2(1 / contextWidth, 0)).xyz;
-    smoothPixel += texture2D(map_accumulation, texCoord + vec2(0, -1 / contextHeight)).xyz;
-    smoothPixel += texture2D(map_accumulation, texCoord + vec2(-1 / contextWidth, 0)).xyz;
-    smoothPixel *= 0.25;
-    base = base * (1.0 - modifier.r) + smoothPixel * modifier.r;
-    //base = base * (1.0 - modifier.r) + vec3(0, 0, 0) * modifier.r * 0.5 + smoothPixel * modifier.r * 0.5; // cartooney effect
-    //base = base * (1.0 - modifier.r) + vec3(0, 0, 0) * modifier.r * 0.8 + smoothPixel * modifier.r * 0.2; // cartooney effect
-  }
-
-
-  // SSAO blur
-
+  // SSAO 4x4 box blur (applied cleanly once, preserving direct sunlight highlights)
   int SSAO_blurSize = 4;
-
-  float SSAO = 0.0f; // texture2D(map_modifier, texCoord).g;
+  float SSAO = 0.0f;
 
   vec2 texelSize = 1.0f / vec2(textureSize(map_modifier, 0));
   vec2 hlim = vec2(float(-SSAO_blurSize) * 0.5f + 0.5f);
@@ -92,46 +81,32 @@ void main(void) {
       SSAO += texture(map_modifier, texCoord + offset).g;
     }
   }
-  SSAO = SSAO / float(SSAO_blurSize * SSAO_blurSize);
-  //SSAO = clamp(SSAO * 3.0f - 2.0f, 0.0f, 1.0f);
+  SSAO = clamp(SSAO * (1.0f / 16.0f), 0.0f, 1.0f);
 
-  //vec3 fragColor = vec3(SSAO);
-  vec3 fragColor = base * SSAO;
+  vec3 fragColor;
+  if (depth > 0.9995f) {
+    fragColor = skyHorizonColor;
+  } else {
+    vec3 base = texture2D(map_accumulation, texCoord).rgb;
 
+    float aoFactor = mix(0.64f, 1.0f, SSAO);
+    fragColor = base * aoFactor;
 
-  // fog
+    float fragDepth = cameraClip.y / (depth - cameraClip.x);
+    float hazeStart = 135.0f;
+    float fogFactor = clamp((fragDepth - hazeStart) * 0.0022f * (1.0f - fogScale * 0.5f), 0.0f, 0.18f);
+    fragColor = mix(fragColor, skyHorizonColor, fogFactor);
+  }
 
-  float depth = texture2D(map_depth, texCoord).x;
+  // Smooth filmic highlight rolloff so white pitch lines & sunlit kits never clip harshly
+  fragColor = fragColor / (1.0f + fragColor * 0.16f) * 1.12f;
 
-  // convert from non-linear to linear
-  float fragDepth = cameraClip.y / (depth - cameraClip.x);
+  float saturation = 1.04f * (0.86f + SSAO * 0.14f);
+  fragColor = ContrastSaturationBrightness(fragColor, 1.0f, 1.03f, saturation);
+  fragColor = AlternateContrast(fragColor, 0.12f);
+  fragColor = clamp(fragColor, 0.0f, 1.0f);
 
-//  vec3 fogColor = vec3(0.84, 0.98, 1.0);
-//  vec3 fogColor = vec3(1.0, 0.9, 0.86);
-//  vec3 fogColor = vec3(0.85, 0.65, 1.0);
-  vec3 fogColor = vec3(0.85, 0.85, 0.9);
-
-  float fogFactor = clamp(fragDepth * 0.01f * (1.0f - fogScale) - 0.16f * fogScale, 0.0f, 0.25f);
-
-  fragColor = fragColor * (1.0f - fogFactor) + fogColor * fogFactor;
-  if (depth > 0.999f) fragColor = fogColor; // fill 'background'/sky
-
-  float brightness = 1.0f;
-  float contrastBias = 0.3f;//0.1f; // 0 == normal .. 1 == 'fake hdri'
-  float saturation = 0.95f * (0.4f + SSAO * 0.6f); // SSAO shadows are less saturated
-
-  // now happens automagically because of glEnable(GL_FRAMEBUFFER_SRGB)
-/*
-  fragColor.r = GammaCorrection(fragColor.r, gamma);
-  fragColor.g = GammaCorrection(fragColor.g, gamma);
-  fragColor.b = GammaCorrection(fragColor.b, gamma);
-*/
-
-  fragColor = ContrastSaturationBrightness(fragColor, brightness, 1.0f, saturation);
-  fragColor = AlternateContrast(fragColor, contrastBias);
-  fragColor = clamp(fragColor, 0.0, 1.0);
-
-  //gl_FragColor = vec4(fragColor, 0);
-  //fragColor = vec3(0, 0.5, 1.0);
-  stdout = vec4(fragColor, 0);
+  vec3 srgbColor = LinearToSRGB(fragColor);
+  float perceptualLuma = dot(srgbColor, vec3(0.299f, 0.587f, 0.114f));
+  stdout = vec4(srgbColor, perceptualLuma);
 }

@@ -39,11 +39,11 @@ namespace blunted {
 
     if (parent) parent->RemoveView(this);
 
-    std::vector < boost::intrusive_ptr<Image2D> > images;
+    std::vector < blunted::intrusive_ptr<Image2D> > images;
     GetImages(images);
     for (unsigned int i = 0; i < images.size(); i++) {
-      boost::intrusive_ptr<Image2D> &image = images.at(i);
-      if (image != boost::intrusive_ptr<Image2D>()) {
+      blunted::intrusive_ptr<Image2D> &image = images.at(i);
+      if (image != blunted::intrusive_ptr<Image2D>()) {
         windowManager->RemoveImage(image);
       }
     }
@@ -75,6 +75,7 @@ namespace blunted {
     view->SetParent(this);
     view->UpdateImagePosition();
     view->UpdateImageVisibility();
+    if (windowManager) windowManager->MarkZPriorityDirty();
   }
 
   void Gui2View::RemoveView(Gui2View *view) {
@@ -84,6 +85,7 @@ namespace blunted {
         view->Hide();
         view->SetParent(0);
         iter = children.erase(iter);
+        if (windowManager) windowManager->MarkZPriorityDirty();
         return;
       } else {
         iter++;
@@ -153,7 +155,7 @@ namespace blunted {
   void Gui2View::CenterPosition() {
   }
 
-  void Gui2View::GetImages(std::vector < boost::intrusive_ptr<Image2D> > &target) {
+  void Gui2View::GetImages(std::vector < blunted::intrusive_ptr<Image2D> > &target) {
   }
 
   void Gui2View::Process() {
@@ -254,9 +256,11 @@ namespace blunted {
   }
 
   void Gui2View::SetZPriority(int prio) {
+    if (zPriorityApplied && zPriority == prio) return;
     zPriority = prio;
+    zPriorityApplied = true;
 
-    std::vector < boost::intrusive_ptr<Image2D> > images;
+    std::vector < blunted::intrusive_ptr<Image2D> > images;
     GetImages(images);
     for (unsigned int i = 0; i < images.size(); i++) {
       images.at(i)->SetPokePriority(prio);

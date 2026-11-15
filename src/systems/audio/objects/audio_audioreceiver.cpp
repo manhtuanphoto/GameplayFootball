@@ -17,13 +17,13 @@ namespace blunted {
   AudioAudioReceiver::~AudioAudioReceiver() {
   }
 
-  boost::intrusive_ptr<Interpreter> AudioAudioReceiver::GetInterpreter(e_ObjectType objectType) {
+  blunted::intrusive_ptr<Interpreter> AudioAudioReceiver::GetInterpreter(e_ObjectType objectType) {
     if (objectType == e_ObjectType_AudioReceiver) {
-      boost::intrusive_ptr<AudioAudioReceiver_AudioReceiverInterpreter> audioReceiverInterpreter(new AudioAudioReceiver_AudioReceiverInterpreter(this));
+      blunted::intrusive_ptr<AudioAudioReceiver_AudioReceiverInterpreter> audioReceiverInterpreter(new AudioAudioReceiver_AudioReceiverInterpreter(this));
       return audioReceiverInterpreter;
     }
     Log(e_FatalError, "AudioAudioReceiver", "GetInterpreter", "No appropriate interpreter found for this ObjectType");
-    return boost::intrusive_ptr<AudioAudioReceiver_AudioReceiverInterpreter>();
+    return blunted::intrusive_ptr<AudioAudioReceiver_AudioReceiverInterpreter>();
   }
 
   void AudioAudioReceiver::SetPosition(const Vector3 &newPosition) {

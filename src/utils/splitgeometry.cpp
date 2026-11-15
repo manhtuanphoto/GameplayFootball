@@ -14,10 +14,10 @@ namespace blunted {
   struct GeomIndex {
     float x;
     float y;
-    boost::intrusive_ptr < Resource<GeometryData> > geomData;
+    blunted::intrusive_ptr < Resource<GeometryData> > geomData;
   };
 
-  boost::intrusive_ptr < Resource<GeometryData> > GetGridGeom(const std::string &name, boost::shared_ptr<Scene3D> scene3D, std::vector<GeomIndex> &geomVec, const AABB &aabb, float gridSize) {
+  blunted::intrusive_ptr < Resource<GeometryData> > GetGridGeom(const std::string &name, std::shared_ptr<Scene3D> scene3D, std::vector<GeomIndex> &geomVec, const AABB &aabb, float gridSize) {
 
     // calculate grid position
 
@@ -57,14 +57,14 @@ namespace blunted {
     return newIndex.geomData;
   }
 
-  boost::intrusive_ptr<Node> SplitGeometry(boost::shared_ptr<Scene3D> scene3D, boost::intrusive_ptr<Geometry> source, float gridSize) {
+  blunted::intrusive_ptr<Node> SplitGeometry(std::shared_ptr<Scene3D> scene3D, blunted::intrusive_ptr<Geometry> source, float gridSize) {
 
-    boost::intrusive_ptr<Node> resultNode(new Node(source->GetName()));
+    blunted::intrusive_ptr<Node> resultNode(new Node(source->GetName()));
 
     std::vector<GeomIndex> geomVec;
 
     // iterate trianglemeshes
-    boost::intrusive_ptr < Resource<GeometryData> > geomData = source->GetGeometryData();
+    blunted::intrusive_ptr < Resource<GeometryData> > geomData = source->GetGeometryData();
 
     geomData->resourceMutex.lock(); // lock all the time, else triangle meshes might get altered
 
@@ -73,14 +73,17 @@ namespace blunted {
     //printf("%i subgeoms found\n", tmeshes.size());
     for (int i = 0; i < (signed int)tmeshes.size(); i++) {
 
-      std::vector<unsigned int> indices; // empty == don't use indices
+      const std::vector<unsigned int> &indices = tmeshes.at(i).indices;
       AABB aabb = GetTriangleMeshAABB(tmeshes.at(i).vertices, tmeshes.at(i).verticesDataSize, indices);
-      boost::intrusive_ptr < Resource<GeometryData> > subGeomData = GetGridGeom(source->GetName(), scene3D, geomVec, aabb, gridSize);
+      blunted::intrusive_ptr < Resource<GeometryData> > subGeomData = GetGridGeom(source->GetName(), scene3D, geomVec, aabb, gridSize);
 
       float *newTMesh = new float[tmeshes.at(i).verticesDataSize];
       memcpy(newTMesh, tmeshes.at(i).vertices, tmeshes.at(i).verticesDataSize * sizeof(float));
       subGeomData->resourceMutex.lock();
       subGeomData->GetResource()->AddTriangleMesh(tmeshes.at(i).material, newTMesh, tmeshes.at(i).verticesDataSize, indices);
+      if (!tmeshes.at(i).skinData.empty()) {
+        subGeomData->GetResource()->GetTriangleMeshesRef().back().skinData = tmeshes.at(i).skinData;
+      }
       subGeomData->resourceMutex.unlock();
     }
 
@@ -89,7 +92,7 @@ namespace blunted {
     for (int i = 0; i < (signed int)geomVec.size(); i++) {
       float x = geomVec.at(i).x;
       float y = geomVec.at(i).y;
-      boost::intrusive_ptr<Geometry> geom = static_pointer_cast<Geometry>(ObjectFactory::GetInstance().CreateObject(source->GetName() + " gridGeom @ " + int_to_str(x) + ", " + int_to_str(y), e_ObjectType_Geometry));
+      blunted::intrusive_ptr<Geometry> geom = static_pointer_cast<Geometry>(ObjectFactory::GetInstance().CreateObject(source->GetName() + " gridGeom @ " + int_to_str(x) + ", " + int_to_str(y), e_ObjectType_Geometry));
       scene3D->CreateSystemObjects(geom);
       geom->SetGeometryData(geomVec.at(i).geomData);
       resultNode->AddObject(geom);

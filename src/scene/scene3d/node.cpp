@@ -15,20 +15,20 @@ namespace blunted {
     aabb.data.dirty = false;
   }
 
-  Node::Node(const Node &source, const std::string &postfix, boost::shared_ptr<Scene3D> scene3D) : Spatial(source) {
+  Node::Node(const Node &source, const std::string &postfix, std::shared_ptr<Scene3D> scene3D) : Spatial(source) {
     SetName(source.GetName() + postfix);
-    std::vector < boost::intrusive_ptr<Node> > gatherNodes;
+    std::vector < blunted::intrusive_ptr<Node> > gatherNodes;
     source.GetNodes(gatherNodes);
     for (int i = 0; i < (signed int)gatherNodes.size(); i++) {
-      boost::intrusive_ptr<Node> copy(new Node(*gatherNodes.at(i).get(), postfix, scene3D));
+      blunted::intrusive_ptr<Node> copy(new Node(*gatherNodes.at(i).get(), postfix, scene3D));
       AddNode(copy);
     }
 
-    std::list < boost::intrusive_ptr<Object> > gatherObjects;
+    std::list < blunted::intrusive_ptr<Object> > gatherObjects;
     source.GetObjects(gatherObjects, false);
-    std::list < boost::intrusive_ptr<Object> >::iterator objectIter = gatherObjects.begin();
+    std::list < blunted::intrusive_ptr<Object> >::iterator objectIter = gatherObjects.begin();
     while (objectIter != gatherObjects.end()) {
-      boost::intrusive_ptr<Object> objCopy = ObjectFactory::GetInstance().CopyObject((*objectIter), postfix);
+      blunted::intrusive_ptr<Object> objCopy = ObjectFactory::GetInstance().CopyObject((*objectIter), postfix);
       scene3D->CreateSystemObjects(objCopy);
       objCopy->Synchronize();
       AddObject(objCopy);
@@ -60,7 +60,7 @@ namespace blunted {
     nodes.Unlock();
   }
 
-  void Node::AddNode(boost::intrusive_ptr<Node> node) {
+  void Node::AddNode(blunted::intrusive_ptr<Node> node) {
     nodes.Lock();
     nodes.data.push_back(node);
     node->SetParent(this);
@@ -73,9 +73,9 @@ namespace blunted {
     InvalidateBoundingVolume();
   }
 
-  void Node::DeleteNode(boost::intrusive_ptr<Node> node) {
+  void Node::DeleteNode(blunted::intrusive_ptr<Node> node) {
     nodes.Lock();
-    std::vector < boost::intrusive_ptr<Node> >::iterator nodeIter = find(nodes.data.begin(), nodes.data.end(), node);
+    std::vector < blunted::intrusive_ptr<Node> >::iterator nodeIter = find(nodes.data.begin(), nodes.data.end(), node);
     if (nodeIter != nodes.data.end()) {
       (*nodeIter)->Exit();
       nodes.data.erase(nodeIter);
@@ -85,7 +85,7 @@ namespace blunted {
     InvalidateBoundingVolume();
   }
 
-  void Node::GetNodes(std::vector < boost::intrusive_ptr<Node> > &gatherNodes, bool recurse) const {
+  void Node::GetNodes(std::vector < blunted::intrusive_ptr<Node> > &gatherNodes, bool recurse) const {
     nodes.Lock();
     int nodesSize = nodes.data.size();
     for (int i = 0; i < nodesSize; i++) {
@@ -95,9 +95,9 @@ namespace blunted {
     nodes.Unlock();
   }
 
-  boost::intrusive_ptr<Node> Node::GetNode(const std::string &name) {
-    boost::mutex::scoped_lock blah(nodes.mutex);
-    std::vector < boost::intrusive_ptr<Node> >::iterator nodeIter = nodes.data.begin();
+  blunted::intrusive_ptr<Node> Node::GetNode(const std::string &name) {
+    std::unique_lock<std::mutex> blah(nodes.mutex);
+    std::vector < blunted::intrusive_ptr<Node> >::iterator nodeIter = nodes.data.begin();
     while (nodeIter != nodes.data.end()) {
       if ((*nodeIter)->GetName() == name) {
         return (*nodeIter);
@@ -105,10 +105,10 @@ namespace blunted {
         nodeIter++;
       }
     }
-    return boost::intrusive_ptr<Node>();
+    return blunted::intrusive_ptr<Node>();
   }
 
-  void Node::AddObject(boost::intrusive_ptr<Object> object) {
+  void Node::AddObject(blunted::intrusive_ptr<Object> object) {
     assert(object.get());
     objects.Lock();
     objects.data.push_back(object);
@@ -122,9 +122,9 @@ namespace blunted {
     InvalidateBoundingVolume();
   }
 
-  boost::intrusive_ptr<Object> Node::GetObject(const std::string &name) {
-    boost::mutex::scoped_lock blah(objects.mutex);
-    std::vector < boost::intrusive_ptr<Object> >::iterator objIter = objects.data.begin();
+  blunted::intrusive_ptr<Object> Node::GetObject(const std::string &name) {
+    std::unique_lock<std::mutex> blah(objects.mutex);
+    std::vector < blunted::intrusive_ptr<Object> >::iterator objIter = objects.data.begin();
     while (objIter != objects.data.end()) {
       if ((*objIter)->GetName() == name) {
         return (*objIter);
@@ -132,12 +132,12 @@ namespace blunted {
         objIter++;
       }
     }
-    return boost::intrusive_ptr<Object>();
+    return blunted::intrusive_ptr<Object>();
   }
 
   void Node::DeleteObject(const std::string &name, bool exitObject) {
     objects.Lock();
-    std::vector < boost::intrusive_ptr<Object> >::iterator objIter = objects.data.begin();
+    std::vector < blunted::intrusive_ptr<Object> >::iterator objIter = objects.data.begin();
     while (objIter != objects.data.end()) {
       if ((*objIter)->GetName() == name) {
         if (exitObject) (*objIter)->Exit();
@@ -155,10 +155,10 @@ namespace blunted {
     InvalidateBoundingVolume();
   }
 
-  void Node::DeleteObject(boost::intrusive_ptr<Object> object, bool exitObject) {
+  void Node::DeleteObject(blunted::intrusive_ptr<Object> object, bool exitObject) {
     objects.Lock();
     // verbose printf("deleting object %s\n", object->GetName().c_str());
-    std::vector < boost::intrusive_ptr<Object> >::iterator objIter = find(objects.data.begin(), objects.data.end(), object);
+    std::vector < blunted::intrusive_ptr<Object> >::iterator objIter = find(objects.data.begin(), objects.data.end(), object);
     if (objIter != objects.data.end()) {
       // verbose printf("found!\n");
       if (exitObject) (*objIter)->Exit();
@@ -174,7 +174,7 @@ namespace blunted {
 
   void Node::DeleteAllObjects(bool exitObjects) {
     objects.Lock();
-    std::vector < boost::intrusive_ptr<Object> >::iterator objIter = objects.data.begin();
+    std::vector < blunted::intrusive_ptr<Object> >::iterator objIter = objects.data.begin();
     while (objIter != objects.data.end()) {
       if (exitObjects) (*objIter)->Exit();
       (*objIter)->SetParent(0);
@@ -193,7 +193,7 @@ namespace blunted {
     DeleteObject(name, false);
   }
 
-  void Node::RemoveObject(boost::intrusive_ptr<Object> object) {
+  void Node::RemoveObject(blunted::intrusive_ptr<Object> object) {
     DeleteObject(object, false);
   }
 
@@ -201,7 +201,7 @@ namespace blunted {
     DeleteAllObjects(false);
   }
 
-  void Node::GetSpatials(std::list < boost::intrusive_ptr<Spatial> > &gatherSpatials, bool recurse, int depth) const {
+  void Node::GetSpatials(std::list < blunted::intrusive_ptr<Spatial> > &gatherSpatials, bool recurse, int depth) const {
     objects.Lock();
     int objectsSize = objects.data.size();
     for (int i = 0; i < objectsSize; i++) {
@@ -220,7 +220,7 @@ namespace blunted {
     }
   }
 
-  void Node::GetObjects(std::list < boost::intrusive_ptr<Object> > &gatherObjects, bool recurse, int depth) const {
+  void Node::GetObjects(std::list < blunted::intrusive_ptr<Object> > &gatherObjects, bool recurse, int depth) const {
     objects.Lock();
     int objectsSize = objects.data.size();
     for (int i = 0; i < objectsSize; i++) {
@@ -238,7 +238,7 @@ namespace blunted {
     }
   }
 
-  void Node::GetObjects(std::list < boost::intrusive_ptr<Object> > &gatherObjects, const vector_Planes &bounding, bool recurse, int depth) const {
+  void Node::GetObjects(std::list < blunted::intrusive_ptr<Object> > &gatherObjects, const vector_Planes &bounding, bool recurse, int depth) const {
     objects.Lock();
     int objectsSize = objects.data.size();
     for (int i = 0; i < objectsSize; i++) {
@@ -256,7 +256,7 @@ namespace blunted {
     }
   }
 
-  void Node::GetObjects(std::deque < boost::intrusive_ptr<Object> > &gatherObjects, const vector_Planes &bounding, bool recurse, int depth) const {
+  void Node::GetObjects(std::deque < blunted::intrusive_ptr<Object> > &gatherObjects, const vector_Planes &bounding, bool recurse, int depth) const {
     objects.Lock();
     int objectsSize = objects.data.size();
     for (int i = 0; i < objectsSize; i++) {

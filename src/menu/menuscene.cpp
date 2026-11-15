@@ -14,7 +14,7 @@ MenuScene::MenuScene() {
 
   seamless = false;
 
-  containerNode = boost::intrusive_ptr<Node>(new Node("menuSceneNode"));
+  containerNode = blunted::intrusive_ptr<Node>(new Node("menuSceneNode"));
   GetScene3D()->AddNode(containerNode);
 
 
@@ -64,7 +64,7 @@ MenuScene::MenuScene() {
 
   Log(e_Notice, "MenuScene", "MenuScene", "Creating geometry");
 
-  boost::intrusive_ptr < Resource<GeometryData> > geometryData = ResourceManagerPool::GetInstance().GetManager<GeometryData>(e_ResourceType_GeometryData)->Fetch("media/objects/menu/background01.ase", true);
+  blunted::intrusive_ptr < Resource<GeometryData> > geometryData = ResourceManagerPool::GetInstance().GetManager<GeometryData>(e_ResourceType_GeometryData)->Fetch("media/objects/menu/background01.ase", true);
   geom = static_pointer_cast<Geometry>(ObjectFactory::GetInstance().CreateObject("geometry_menuscene", e_ObjectType_Geometry));
   GetScene3D()->CreateSystemObjects(geom);
   geom->SetGeometryData(geometryData);

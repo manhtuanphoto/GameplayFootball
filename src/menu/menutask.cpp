@@ -147,14 +147,44 @@ void MenuTask::ProcessPhase() {
 
     Properties properties;
     if (!QuickStart()) {
-      if (!IsReleaseVersion()) {
-        windowManager->GetPageFactory()->CreatePage((int)e_PageID_MainMenu, properties, 0);
-      } else {
-        windowManager->GetPageFactory()->CreatePage((int)e_PageID_Intro, properties, 0);
-      }
+      windowManager->GetPageFactory()->CreatePage((int)e_PageID_MainMenu, properties, 0);
     } else {
       windowManager->GetPageFactory()->CreatePage((int)e_PageID_LoadingMatch, properties, 0);
     }
+
+  } else if (menuAction == e_MenuAction_Sandbox) {
+
+    windowManager->GetPagePath()->Clear();
+
+    GetGameTask()->Action(e_GameTaskMessage_StopMatch);
+    GetGameTask()->Action(e_GameTaskMessage_StartMenuScene);
+
+    Gui2PageData mainMenuData;
+    mainMenuData.pageID = (int)e_PageID_MainMenu;
+    mainMenuData.properties = std::shared_ptr<Properties>(new Properties());
+    mainMenuData.properties->Set("selectedButtonID", 1);
+    mainMenuData.data = 0;
+    windowManager->GetPagePath()->Push(mainMenuData);
+
+    Properties properties;
+    windowManager->GetPageFactory()->CreatePage((int)e_PageID_Sandbox, properties, 0);
+
+  } else if (menuAction == e_MenuAction_FreeKick) {
+
+    windowManager->GetPagePath()->Clear();
+
+    GetGameTask()->Action(e_GameTaskMessage_StopMatch);
+    GetGameTask()->Action(e_GameTaskMessage_StartMenuScene);
+
+    Gui2PageData mainMenuData;
+    mainMenuData.pageID = (int)e_PageID_MainMenu;
+    mainMenuData.properties = std::shared_ptr<Properties>(new Properties());
+    mainMenuData.properties->Set("selectedButtonID", 2);
+    mainMenuData.data = 0;
+    windowManager->GetPagePath()->Push(mainMenuData);
+
+    Properties properties;
+    windowManager->GetPageFactory()->CreatePage((int)e_PageID_FreeKick, properties, 0);
 
   } else if (menuAction == e_MenuAction_Game) {
 

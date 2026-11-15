@@ -55,7 +55,7 @@ namespace blunted {
       virtual void Hide();
 
     protected:
-      boost::intrusive_ptr<Image2D> image;
+      blunted::intrusive_ptr<Image2D> image;
 
       std::vector<GridContainer> container;
 

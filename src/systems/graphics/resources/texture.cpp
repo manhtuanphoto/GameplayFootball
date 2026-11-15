@@ -43,7 +43,7 @@ namespace blunted {
   void Texture::DeleteTexture() {
     if (textureID != -1) {
       assert(renderer3D);
-      boost::intrusive_ptr<Renderer3DMessage_DeleteTexture> deleteTexture(new Renderer3DMessage_DeleteTexture(textureID));
+      blunted::intrusive_ptr<Renderer3DMessage_DeleteTexture> deleteTexture(new Renderer3DMessage_DeleteTexture(textureID));
       renderer3D->messageQueue.PushMessage(deleteTexture);
       deleteTexture->Wait();
 
@@ -54,7 +54,7 @@ namespace blunted {
   int Texture::CreateTexture(e_InternalPixelFormat internalPixelFormat, e_PixelFormat pixelFormat, int width, int height, bool alpha, bool repeat, bool mipmaps, bool filter, bool compareDepth) {
     assert(renderer3D);
 
-    boost::intrusive_ptr<Renderer3DMessage_CreateTexture> createTexture(new Renderer3DMessage_CreateTexture(internalPixelFormat, pixelFormat, width, height, alpha, repeat, mipmaps, filter, compareDepth)); // false == multisample
+    blunted::intrusive_ptr<Renderer3DMessage_CreateTexture> createTexture(new Renderer3DMessage_CreateTexture(internalPixelFormat, pixelFormat, width, height, alpha, repeat, mipmaps, filter, compareDepth)); // false == multisample
     renderer3D->messageQueue.PushMessage(createTexture);
     createTexture->Wait();
 
@@ -71,7 +71,7 @@ namespace blunted {
     assert(textureID != -1);
 
     bool _alpha = SDL_ISPIXELFORMAT_ALPHA(image->format->format);
-    boost::intrusive_ptr<Renderer3DMessage_ResizeTexture> resizeTexture(new Renderer3DMessage_ResizeTexture(textureID, image, internalPixelFormat, pixelFormat, _alpha, mipmaps));
+    blunted::intrusive_ptr<Renderer3DMessage_ResizeTexture> resizeTexture(new Renderer3DMessage_ResizeTexture(textureID, image, internalPixelFormat, pixelFormat, _alpha, mipmaps));
     renderer3D->messageQueue.PushMessage(resizeTexture);
     //resizeTexture->Wait();
   }
@@ -81,7 +81,7 @@ namespace blunted {
     assert(textureID != -1);
 
     bool _alpha = SDL_ISPIXELFORMAT_ALPHA(image->format->format);
-    boost::intrusive_ptr<Renderer3DMessage_UpdateTexture> updateTexture(new Renderer3DMessage_UpdateTexture(textureID, image, _alpha, mipmaps));
+    blunted::intrusive_ptr<Renderer3DMessage_UpdateTexture> updateTexture(new Renderer3DMessage_UpdateTexture(textureID, image, _alpha, mipmaps));
     renderer3D->messageQueue.PushMessage(updateTexture);
     //updateTexture->Wait();
   }

@@ -34,21 +34,21 @@ void SetSmallDebugCircle1(const Vector3 &pos);
 void SetSmallDebugCircle2(const Vector3 &pos);
 void SetLargeDebugCircle(const Vector3 &pos);
 
-boost::intrusive_ptr<Geometry> GetGreenDebugPilon();
-boost::intrusive_ptr<Geometry> GetBlueDebugPilon();
-boost::intrusive_ptr<Geometry> GetYellowDebugPilon();
-boost::intrusive_ptr<Geometry> GetRedDebugPilon();
+blunted::intrusive_ptr<Geometry> GetGreenDebugPilon();
+blunted::intrusive_ptr<Geometry> GetBlueDebugPilon();
+blunted::intrusive_ptr<Geometry> GetYellowDebugPilon();
+blunted::intrusive_ptr<Geometry> GetRedDebugPilon();
 
-boost::intrusive_ptr<Geometry> GetSmallDebugCircle1();
-boost::intrusive_ptr<Geometry> GetSmallDebugCircle2();
-boost::intrusive_ptr<Geometry> GetLargeDebugCircle();
+blunted::intrusive_ptr<Geometry> GetSmallDebugCircle1();
+blunted::intrusive_ptr<Geometry> GetSmallDebugCircle2();
+blunted::intrusive_ptr<Geometry> GetLargeDebugCircle();
 
 std::string GetConfigFilename();
-boost::shared_ptr<Scene2D> GetScene2D();
-boost::shared_ptr<Scene3D> GetScene3D();
+std::shared_ptr<Scene2D> GetScene2D();
+std::shared_ptr<Scene3D> GetScene3D();
 GraphicsSystem *GetGraphicsSystem();
-boost::shared_ptr<GameTask> GetGameTask();
-boost::shared_ptr<MenuTask> GetMenuTask();
+std::shared_ptr<GameTask> GetGameTask();
+std::shared_ptr<MenuTask> GetMenuTask();
 
 bool IsReleaseVersion();
 bool Verbose();
@@ -60,8 +60,8 @@ std::string GetActiveSaveDirectory();
 void SetActiveSaveDirectory(const std::string &dir);
 bool SuperDebug();
 e_DebugMode GetDebugMode();
-boost::intrusive_ptr<Image2D> GetDebugImage();
-boost::intrusive_ptr<Image2D> GetDebugOverlay();
+blunted::intrusive_ptr<Image2D> GetDebugImage();
+blunted::intrusive_ptr<Image2D> GetDebugOverlay();
 void GetDebugOverlayCoord(Match *match, const Vector3 &worldPos, int &x, int &y);
 
 int PredictFrameTimeToGo_ms(int frameCount);

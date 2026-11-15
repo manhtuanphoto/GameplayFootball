@@ -4,30 +4,28 @@
 
 #include "r3d_messages.hpp"
 
+#include <algorithm>
+
 #include "../resources/texture.hpp"
 
 namespace blunted {
 
   bool R3DM_SortVertexBufferQueueEntries(const VertexBufferQueueEntry &vb1, const VertexBufferQueueEntry &vb2) {
-    return vb1.vertexBuffer->GetResource()->GetID() < vb2.vertexBuffer->GetResource()->GetID();
+    if (vb1.hasSkinning != vb2.hasSkinning) return !vb1.hasSkinning;
+    if (vb1.vaoIDCache != vb2.vaoIDCache) return vb1.vaoIDCache < vb2.vaoIDCache;
+    return vb1.firstTexIDCache < vb2.firstTexIDCache;
   }
 
   bool Renderer3DMessage_RenderView::Execute(void *caller) {
 
     Renderer3D *renderer = static_cast<Renderer3D*>(caller);
 
-    renderer->ClearBuffer(Vector3(0, 0, 0), false, true);
-
     View &view = renderer->GetView(viewID);
 
-    Matrix4 projectionMatrix = renderer->CreatePerspectiveMatrix(view.width / (view.height * 1.0f), buffer.cameraNearCap, buffer.cameraFarCap);
+    Matrix4 projectionMatrix = renderer->CreatePerspectiveMatrix(view.baseWidth / (std::max(1, view.baseHeight) * 1.0f), buffer.cameraNearCap, buffer.cameraFarCap);
     Matrix4 viewMatrix = buffer.cameraMatrix;
 
-
-    // not sorting actually seems to be fastest atm. (the sorting being slower than the performance win by reducing state changes)
-    //std::sort(buffer.visibleGeometry.begin(), buffer.visibleGeometry.end(), R3DM_SortVertexBufferQueueEntries);
-    //printf("%i entries\n", buffer.visibleGeometry.size());
-    //buffer.visibleGeometry.sort(SortVertexBufferQueueEntries);
+    std::sort(buffer.visibleGeometry.begin(), buffer.visibleGeometry.end(), R3DM_SortVertexBufferQueueEntries);
 
     int width;
     int height;
@@ -35,7 +33,7 @@ namespace blunted {
     renderer->GetContextSize(width, height, bpp);
     // opengl window starts lower left, so invert y
     //printf("%i %i %i %i\n", view.x, height - view.y, view.width, view.height);
-    renderer->SetViewport(view.x, height - (view.y + view.height), view.width, view.height);
+    renderer->SetViewport(view.x, height - (view.y + view.baseHeight), view.baseWidth, view.baseHeight);
 
     renderer->SetFOV(buffer.cameraFOV);
 
@@ -190,6 +188,9 @@ namespace blunted {
 
     // lights
     //renderer->SetMatrixMode(e_MatrixMode_ModelView);
+    targets.push_back(e_TargetAttachment_Color0);
+    renderer->SetRenderTargets(targets);
+    targets.clear();
 
     renderer->UseShader("lighting");
 
@@ -226,26 +227,24 @@ namespace blunted {
 
 
 
-    // render accumulation buffer with some nice postprocessing effects
+    // 1. Tone-map + SSAO + Haze into intermediate sRGB+Luma buffer (view.postProcessBufferID)
 
-    renderer->BindFrameBuffer(0);
+    renderer->BindFrameBuffer(view.postProcessBufferID);
 
-    targets.push_back(e_TargetAttachment_Back);
+    targets.push_back(e_TargetAttachment_Color0);
     renderer->SetRenderTargets(targets);
     targets.clear();
 
-    renderer->UseShader("postprocess");
+    renderer->SetViewport(0, 0, view.width, view.height);
 
-    //renderer->SetUniformFloat("postprocess", "brightness", (float)renderer->HDRGetOverallBrightness());
+    renderer->UseShader("postprocess");
 
     renderer->SetUniformFloat("postprocess", "contextWidth", (float)view.width);
     renderer->SetUniformFloat("postprocess", "contextHeight", (float)view.height);
-    renderer->SetUniformFloat("postprocess", "contextX", (float)view.x);
-    renderer->SetUniformFloat("postprocess", "contextY", (float)(height - (view.y + view.height)));
+    renderer->SetUniformFloat("postprocess", "contextX", 0.0f);
+    renderer->SetUniformFloat("postprocess", "contextY", 0.0f);
     renderer->SetUniformFloat2("postprocess", "cameraClip", depthParamNear, depthParamFar);
     renderer->SetUniformFloat("postprocess", "fogScale", 0.8f - NormalizedClamp(buffer.cameraFOV, 20, 100) * 0.6f);
-
-    renderer->SetViewport(view.x, height - (view.y + view.height), view.width, view.height);
 
     renderer->SetTextureUnit(2);
     renderer->BindTexture(view.gBuffer_DepthTexID);
@@ -256,13 +255,75 @@ namespace blunted {
 
     renderer->SetDepthTesting(false);
     renderer->SetDepthMask(false);
-
-    renderer->SetFramebufferGammaCorrection(true);
-    renderer->RenderOverlay2D();
     renderer->SetFramebufferGammaCorrection(false);
+    renderer->RenderOverlay2D();
 
     renderer->SetTextureUnit(2);
     renderer->BindTexture(0);
+    renderer->SetTextureUnit(1);
+    renderer->BindTexture(0);
+    renderer->SetTextureUnit(0);
+    renderer->BindTexture(0);
+
+
+    // 2. Anti-Aliasing + Supersample Resolve + CAS onto BackBuffer (FrameBuffer 0)
+
+    renderer->BindFrameBuffer(0);
+
+    targets.push_back(e_TargetAttachment_Back);
+    renderer->SetRenderTargets(targets);
+    targets.clear();
+
+    int drawableW = width;
+    int drawableH = height;
+    renderer->GetDrawableSize(drawableW, drawableH);
+    renderer->SetViewport(0, 0, drawableW, drawableH);
+    renderer->ClearBuffer(Vector3(0, 0, 0), false, true);
+
+    float targetAspect = (float)width / (float)std::max(1, height);
+    float drawableAspect = (float)drawableW / (float)std::max(1, drawableH);
+    int fitW = drawableW;
+    int fitH = drawableH;
+    int fitX = 0;
+    int fitY = 0;
+    if (std::fabs(drawableAspect - targetAspect) > 0.01f) {
+      if (drawableAspect > targetAspect) {
+        fitH = drawableH;
+        fitW = int(std::round(fitH * targetAspect));
+        fitX = (drawableW - fitW) / 2;
+      } else {
+        fitW = drawableW;
+        fitH = int(std::round(fitW / targetAspect));
+        fitY = (drawableH - fitH) / 2;
+      }
+    }
+
+    int outX = fitX + int(std::floor(view.x * (float)fitW / (float)std::max(1, width)));
+    int outY = fitY + int(std::floor((height - (view.y + view.baseHeight)) * (float)fitH / (float)std::max(1, height)));
+    int outW = std::max(1, int(std::round(view.baseWidth * (float)fitW / (float)std::max(1, width))));
+    int outH = std::max(1, int(std::round(view.baseHeight * (float)fitH / (float)std::max(1, height))));
+
+    renderer->UseShader("aa");
+
+    renderer->SetUniformFloat("aa", "contextWidth", (float)outW);
+    renderer->SetUniformFloat("aa", "contextHeight", (float)outH);
+    renderer->SetUniformFloat("aa", "contextX", (float)outX);
+    renderer->SetUniformFloat("aa", "contextY", (float)outY);
+    renderer->SetUniformFloat2("aa", "sourceTexelSize", 1.0f / (float)std::max(1, view.width), 1.0f / (float)std::max(1, view.height));
+    renderer->SetUniformInt("aa", "aaMode", (int)renderer->GetAntiAliasingMode());
+
+    renderer->SetViewport(outX, outY, outW, outH);
+
+    renderer->SetTextureUnit(1);
+    renderer->BindTexture(view.accumBuffer_ModifierTexID);
+    renderer->SetTextureUnit(0);
+    renderer->BindTexture(view.postProcessTexID);
+
+    renderer->SetDepthTesting(false);
+    renderer->SetDepthMask(false);
+    renderer->SetFramebufferGammaCorrection(false);
+    renderer->RenderOverlay2D();
+
     renderer->SetTextureUnit(1);
     renderer->BindTexture(0);
     renderer->SetTextureUnit(0);

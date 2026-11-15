@@ -13,42 +13,29 @@
 
 #include "blunted.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <set>
-#include <boost/algorithm/string.hpp>
 
 using namespace blunted;
 
-IntroPage::IntroPage(Gui2WindowManager *windowManager, const Gui2PageData &pageData) : Gui2Page(windowManager, pageData) {
-
-  windowManager->BlackoutBackground(true);
-
-  Gui2Root *root = windowManager->GetRoot();
-
-  bg = new Gui2Image(windowManager, "image_intro", 0, 0, 100, 100);
-  bg->LoadImage("media/menu/backgrounds/intro01.png");
-
-  this->AddView(bg);
-  bg->Show();
-
-  this->SetFocus();
-
-  this->Show();
+IntroPage::IntroPage(Gui2WindowManager *windowManager, const Gui2PageData &pageData)
+    : Gui2Page(windowManager, pageData),
+      transitioned(false) {
+  this->Hide();
 }
 
 IntroPage::~IntroPage() {
-  windowManager->BlackoutBackground(false);
 }
 
-void IntroPage::ProcessWindowingEvent(WindowingEvent *event) {
-  if (event->IsEscape() || event->IsActivate()) {
-
-    CreatePage((int)e_PageID_MainMenu, 0);
-    return;
-  }
-}
-
-void IntroPage::ProcessKeyboardEvent(KeyboardEvent *event) {
-  CreatePage((int)e_PageID_MainMenu, 0);
+void IntroPage::Process() {
+  Gui2Page::Process();
+  if (transitioned) return;
+  transitioned = true;
+  this->Hide();
+  windowManager->MarkForDeletion(this);
+  Properties properties;
+  windowManager->GetPageFactory()->CreatePage((int)e_PageID_MainMenu, properties, 0);
 }
 
 
@@ -86,16 +73,18 @@ void OutroPage::ProcessKeyboardEvent(KeyboardEvent *event) {
 
 
 MainMenuPage::MainMenuPage(Gui2WindowManager *windowManager, const Gui2PageData &pageData) : Gui2Page(windowManager, pageData) {
-  Gui2Image *title = new Gui2Image(windowManager, "image_main_title", 28, 32, 44, 20);
+  float titleH = 20.0f;
+  float titleW = (titleH * 2.75f) / windowManager->GetAspectRatio();
+  Gui2Image *title = new Gui2Image(windowManager, "image_main_title", 50.0f - titleW * 0.5f, 30.0f, titleW, titleH);
   title->LoadImage("media/menu/main/title01.png");
 
   this->AddView(title);
   title->Show();
 
   buttons.push_back(new Gui2Button(windowManager, "button_main_start", 0, 0, 20, 3, "Match"));
-  buttons.push_back(new Gui2Button(windowManager, "button_main_cup", 0, 0, 20, 3, "Cup"));
+  buttons.push_back(new Gui2Button(windowManager, "button_main_sandbox", 0, 0, 20, 3, "Sandbox (AI)"));
+  buttons.push_back(new Gui2Button(windowManager, "button_main_freekick", 0, 0, 20, 3, "Free Kick"));
   buttons.push_back(new Gui2Button(windowManager, "button_main_league", 0, 0, 20, 3, "League"));
-  buttons.push_back(new Gui2Button(windowManager, "button_main_edit", 0, 0, 20, 3, "Editor"));
   buttons.push_back(new Gui2Button(windowManager, "button_main_settings", 0, 0, 20, 3, "Settings"));
   buttons.push_back(new Gui2Button(windowManager, "button_main_credits", 0, 0, 20, 3, "Credits"));
   buttons.push_back(new Gui2Button(windowManager, "button_main_quit", 0, 0, 20, 3, "Exit"));
@@ -103,21 +92,21 @@ MainMenuPage::MainMenuPage(Gui2WindowManager *windowManager, const Gui2PageData 
     buttons.push_back(new Gui2Button(windowManager, "button_main_import", 0, 0, 20, 3, "Import FM"));
   }
 
-  buttons.at(0)->sig_OnClick.connect(boost::bind(&MainMenuPage::GoControllerSelect, this));
-  buttons.at(2)->sig_OnClick.connect(boost::bind(&MainMenuPage::GoLeague, this));
-  buttons.at(4)->sig_OnClick.connect(boost::bind(&MainMenuPage::GoSettings, this));
-  buttons.at(5)->sig_OnClick.connect(boost::bind(&MainMenuPage::GoCredits, this));
+  buttons.at(0)->sig_OnClick.connect(blunted::Bind(&MainMenuPage::GoControllerSelect, this));
+  buttons.at(1)->sig_OnClick.connect(blunted::Bind(&MainMenuPage::GoSandbox, this));
+  buttons.at(2)->sig_OnClick.connect(blunted::Bind(&MainMenuPage::GoFreeKick, this));
+  buttons.at(3)->sig_OnClick.connect(blunted::Bind(&MainMenuPage::GoLeague, this));
+  buttons.at(4)->sig_OnClick.connect(blunted::Bind(&MainMenuPage::GoSettings, this));
+  buttons.at(5)->sig_OnClick.connect(blunted::Bind(&MainMenuPage::GoCredits, this));
   if (!IsReleaseVersion()) {
-    buttons.at(6)->sig_OnClick.connect(boost::bind(&MenuTask::QuitGame, GetMenuTask()));
+    buttons.at(6)->sig_OnClick.connect(blunted::Bind(&MenuTask::QuitGame, GetMenuTask()));
   } else {
-    buttons.at(6)->sig_OnClick.connect(boost::bind(&MainMenuPage::GoOutro, this));
+    buttons.at(6)->sig_OnClick.connect(blunted::Bind(&MainMenuPage::GoOutro, this));
   }
   if (!IsReleaseVersion()) {
-    buttons.at(7)->sig_OnClick.connect(boost::bind(&MainMenuPage::GoImportDB, this));
+    buttons.at(7)->sig_OnClick.connect(blunted::Bind(&MainMenuPage::GoImportDB, this));
   }
 
-  buttons.at(1)->SetActive(false);
-  buttons.at(2)->SetActive(false);
   buttons.at(3)->SetActive(false);
 
   grid = new Gui2Grid(windowManager, "grid_main", 29.25, 52, 41.5, 40);
@@ -146,6 +135,8 @@ MainMenuPage::~MainMenuPage() {
 
 void MainMenuPage::GoControllerSelect() {
 
+  GetMenuTask()->SetSpecialMatchMode(e_SpecialMatchMode_Normal);
+
   this->Exit();
 
   pageData.properties->Set("selectedButtonID", 0);
@@ -156,11 +147,35 @@ void MainMenuPage::GoControllerSelect() {
   delete this;
 }
 
-void MainMenuPage::GoLeague() {
+void MainMenuPage::GoSandbox() {
+
+  this->Exit();
+
+  pageData.properties->Set("selectedButtonID", 1);
+  Properties properties;
+  windowManager->GetPageFactory()->CreatePage((int)e_PageID_Sandbox, properties, 0);
+
+  delete this;
+}
+
+void MainMenuPage::GoFreeKick() {
 
   this->Exit();
 
   pageData.properties->Set("selectedButtonID", 2);
+  Properties properties;
+  windowManager->GetPageFactory()->CreatePage((int)e_PageID_FreeKick, properties, 0);
+
+  delete this;
+}
+
+void MainMenuPage::GoLeague() {
+
+  GetMenuTask()->SetSpecialMatchMode(e_SpecialMatchMode_Normal);
+
+  this->Exit();
+
+  pageData.properties->Set("selectedButtonID", 3);
   Properties properties;
   windowManager->GetPageFactory()->CreatePage((int)e_PageID_League_Start, properties, 0);
 
@@ -262,8 +277,12 @@ ClubData GetClubData(Database *namedb, const std::string &name) {
     data.formation_xml = "";
     data.tactics_xml = "";
     data.shortName = name;
-    data.shortName.erase(remove_if(data.shortName.begin(), data.shortName.end(), isspace), data.shortName.end());
-    data.shortName = boost::to_upper_copy(data.shortName.substr(0, 3));
+    data.shortName.erase(std::remove_if(data.shortName.begin(), data.shortName.end(),
+                                        [](unsigned char ch) { return std::isspace(ch) != 0; }),
+                         data.shortName.end());
+    data.shortName = data.shortName.substr(0, 3);
+    std::transform(data.shortName.begin(), data.shortName.end(), data.shortName.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
     data.color1 = "40, 40, 40";
     data.color2 = "200, 200, 200";
   }
@@ -1062,7 +1081,7 @@ void MainMenuPage::Import_ProcessAgeValueStats() {
         amount++;
         tmpIter++;
       }
-      if (boost::next(tmpIter) != tempAverageStatPerAge.end()) { // add next
+      if (std::next(tmpIter) != tempAverageStatPerAge.end()) { // add next
         tmpIter++;
         average += tmpIter->second;
         amount++;

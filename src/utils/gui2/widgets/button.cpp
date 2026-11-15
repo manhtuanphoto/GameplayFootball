@@ -35,7 +35,7 @@ namespace blunted {
   Gui2Button::~Gui2Button() {
   }
 
-  void Gui2Button::GetImages(std::vector < boost::intrusive_ptr<Image2D> > &target) {
+  void Gui2Button::GetImages(std::vector < blunted::intrusive_ptr<Image2D> > &target) {
     target.push_back(image);
     Gui2View::GetImages(target);
   }

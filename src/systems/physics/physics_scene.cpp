@@ -25,12 +25,12 @@ namespace blunted {
   PhysicsScene::~PhysicsScene() {
   }
 
-  ISystemObject *PhysicsScene::CreateSystemObject(boost::intrusive_ptr<Object> object) {
+  ISystemObject *PhysicsScene::CreateSystemObject(blunted::intrusive_ptr<Object> object) {
     assert(object.get());
 
     // todo: system scene shouldn't know about object types, i guess? maybe via a Command
     if (object->GetObjectType() == e_ObjectType_Geometry) {
-      if (boost::static_pointer_cast<Geometry>(object)->GetProperties().GetBool("physicable") == true) {
+      if (blunted::static_pointer_cast<Geometry>(object)->GetProperties().GetBool("physicable") == true) {
         PhysicsGeometry *physicsObject = new PhysicsGeometry(this);
         // physics system objects need to feedback to objects, so pass it as user data
         object->Attach(physicsObject->GetInterpreter(e_ObjectType_Geometry), object.get());
@@ -48,13 +48,13 @@ namespace blunted {
     return NULL;
   }
 
-  boost::intrusive_ptr<ISceneInterpreter> PhysicsScene::GetInterpreter(e_SceneType sceneType) {
+  blunted::intrusive_ptr<ISceneInterpreter> PhysicsScene::GetInterpreter(e_SceneType sceneType) {
     if (sceneType == e_SceneType_Scene3D) {
-      boost::intrusive_ptr<PhysicsScene_Scene3DInterpreter> scene3DInterpreter(new PhysicsScene_Scene3DInterpreter(this));
+      blunted::intrusive_ptr<PhysicsScene_Scene3DInterpreter> scene3DInterpreter(new PhysicsScene_Scene3DInterpreter(this));
       return scene3DInterpreter;
     }
     Log(e_FatalError, "PhysicsScene", "GetInterpreter", "No appropriate interpreter found for this SceneType");
-    return boost::intrusive_ptr<PhysicsScene_Scene3DInterpreter>();
+    return blunted::intrusive_ptr<PhysicsScene_Scene3DInterpreter>();
   }
 
   PhysicsSystem *PhysicsScene::GetPhysicsSystem() {
@@ -91,7 +91,7 @@ namespace blunted {
     caller = 0;
   }
 
-  ISystemObject *PhysicsScene_Scene3DInterpreter::CreateSystemObject(boost::intrusive_ptr<Object> object) {
+  ISystemObject *PhysicsScene_Scene3DInterpreter::CreateSystemObject(blunted::intrusive_ptr<Object> object) {
     return caller->CreateSystemObject(object);
   }
 

@@ -18,7 +18,7 @@ namespace blunted {
       ImageLoader();
       virtual ~ImageLoader();
 
-      virtual void Load(std::string filename, boost::intrusive_ptr < Resource <Surface> > resource);
+      virtual void Load(std::string filename, blunted::intrusive_ptr < Resource <Surface> > resource);
 
     protected:
 

@@ -19,6 +19,7 @@
 #define _HPP_FOOTBALL_ONTHEPITCH_BALL
 
 #include "defines.hpp"
+#include "base/circular_buffer.hpp"
 #include "scene/scene3d/scene3d.hpp"
 #include "scene/objects/geometry.hpp"
 
@@ -46,7 +47,7 @@ class Ball {
     Ball(Match *match);
     virtual ~Ball();
 
-    boost::intrusive_ptr<Geometry> GetBallGeom() { return ball; }
+    blunted::intrusive_ptr<Geometry> GetBallGeom() { return ball; }
 
     inline Vector3 Predict(int predictTime_ms) const {
       unsigned int index = predictTime_ms;
@@ -79,12 +80,12 @@ class Ball {
     void ResetSituation(const Vector3 &focusPos);
 
   protected:
-    boost::shared_ptr<Scene3D> scene3D;
+    std::shared_ptr<Scene3D> scene3D;
 
-    boost::intrusive_ptr<Node> ballNode;
-    boost::intrusive_ptr<Geometry> ball;
-    boost::intrusive_ptr<Sound> sound;
-    boost::intrusive_ptr<Sound> goalpostsound;
+    blunted::intrusive_ptr<Node> ballNode;
+    blunted::intrusive_ptr<Geometry> ball;
+    blunted::intrusive_ptr<Sound> sound;
+    blunted::intrusive_ptr<Sound> goalpostsound;
 
     Vector3 momentum;
     Quaternion rotation_ms;
@@ -92,7 +93,7 @@ class Ball {
     Vector3 predictions[ballPredictionSize_ms / 10];
     Quaternion orientPrediction;
 
-    std::list<Vector3> ballPosHistory;
+    CircularBuffer<Vector3> ballPosHistory;
     Vector3 previousMomentum;
     Vector3 previousPosition;
 

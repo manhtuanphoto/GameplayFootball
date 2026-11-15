@@ -30,6 +30,8 @@ class IngamePage : public Gui2Page {
     void GoVisualOptions();
     void GoSystemSettings();
     void GoReplay();
+    void GoSandbox();
+    void GoFreeKick();
     void GoPreQuit();
 
     virtual void ProcessWindowingEvent(WindowingEvent *event);

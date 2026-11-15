@@ -24,7 +24,7 @@ namespace blunted {
       Gui2Scrollbar(Gui2WindowManager *windowManager, const std::string &name, float x_percent, float y_percent, float width_percent, float height_percent);
       virtual ~Gui2Scrollbar();
 
-      virtual void GetImages(std::vector < boost::intrusive_ptr<Image2D> > &target);
+      virtual void GetImages(std::vector < blunted::intrusive_ptr<Image2D> > &target);
 
       virtual void Process();
 
@@ -35,7 +35,7 @@ namespace blunted {
       void SetProgressPercent(float newValue) { progress_percent = newValue; }
 
     protected:
-      boost::intrusive_ptr<Image2D> image;
+      blunted::intrusive_ptr<Image2D> image;
 
       e_Gui2ScrollbarMode mode;
       float size_percent;

@@ -20,10 +20,10 @@ using namespace blunted;
 class PlayerBase;
 class Match;
 
-typedef std::map < const std::string, boost::intrusive_ptr<Node> > NodeMap;
+typedef std::map < const std::string, blunted::intrusive_ptr<Node> > NodeMap;
 
 struct Joint {
-  boost::intrusive_ptr<Node> node;
+  blunted::intrusive_ptr<Node> node;
   Vector3 position;
   Quaternion orientation;
   Vector3 origPos;
@@ -162,7 +162,7 @@ struct AnimApplyBuffer {
 };
 
 struct TemporalHumanoidNode {
-  boost::intrusive_ptr<Node> actualNode;
+  blunted::intrusive_ptr<Node> actualNode;
   Vector3 cachedPosition;
   Quaternion cachedOrientation;
   TemporalSmoother<Vector3> position;
@@ -195,10 +195,47 @@ struct SpatialState {
 
 static const Vector3 emptyVec(0);
 
+bool IsProceduralIKEnabled();
+void SetProceduralIKEnabled(bool enabled);
+
+struct FootLockState {
+  FootLockState() : locked(false), weight(0.0f), lockedWorldPos(0), prevRawWorldPos(0), initialized(false) {}
+  bool locked;
+  float weight;
+  Vector3 lockedWorldPos;
+  Vector3 prevRawWorldPos;
+  bool initialized;
+  void Reset() {
+    locked = false;
+    weight = 0.0f;
+    initialized = false;
+  }
+};
+
+struct ProceduralIKBuffer {
+  ProceduralIKBuffer()
+      : functionType(e_FunctionType_Movement),
+        frameNum(0),
+        touchFrame(-1),
+        touchLeg(0),
+        ballWorldPos(0, 0, 0.11f),
+        touchWorldPos(0, 0, 0.11f),
+        floatVelocity(0.0f),
+        resetCounter(0) {}
+  e_FunctionType functionType;
+  int frameNum;
+  int touchFrame;
+  int touchLeg; // -1 = left, 0 = none, 1 = right
+  Vector3 ballWorldPos;
+  Vector3 touchWorldPos;
+  float floatVelocity;
+  unsigned long resetCounter;
+};
+
 class HumanoidBase {
 
   public:
-    HumanoidBase(PlayerBase *player, Match *match, boost::intrusive_ptr<Node> humanoidSourceNode, boost::intrusive_ptr<Node> fullbodySourceNode, std::map<Vector3, Vector3> &colorCoords, boost::shared_ptr<AnimCollection> animCollection, boost::intrusive_ptr<Node> fullbodyTargetNode, boost::intrusive_ptr < Resource<Surface> > kit, int bodyUpdatePhaseOffset);
+    HumanoidBase(PlayerBase *player, Match *match, blunted::intrusive_ptr<Node> humanoidSourceNode, blunted::intrusive_ptr<Node> fullbodySourceNode, std::map<Vector3, Vector3> &colorCoords, std::shared_ptr<AnimCollection> animCollection, blunted::intrusive_ptr<Node> fullbodyTargetNode, blunted::intrusive_ptr < Resource<Surface> > kit, int bodyUpdatePhaseOffset);
     virtual ~HumanoidBase();
 
     void PrepareFullbodyModel(std::map<Vector3, Vector3> &colorCoords);
@@ -210,6 +247,7 @@ class HumanoidBase {
     void PreparePutBuffers(unsigned long snapshotTime_ms);
     void FetchPutBuffers(unsigned long putTime_ms);
     void Put();
+    void ApplyProceduralIK();
 
     virtual void CalculateGeomOffsets();
     void SetOffset(const std::string &nodeName, float bias, const Quaternion &orientation, bool isRelative = false);
@@ -234,8 +272,8 @@ class HumanoidBase {
     void OffsetPosition(const Vector3 &offset);
     void TripMe(const Vector3 &tripVector, int tripType);
 
-    boost::intrusive_ptr<Node> GetHumanoidNode() { return humanoidNode; }
-    boost::intrusive_ptr<Node> GetFullbodyNode() { return fullbodyNode; }
+    blunted::intrusive_ptr<Node> GetHumanoidNode() { return humanoidNode; }
+    blunted::intrusive_ptr<Node> GetFullbodyNode() { return fullbodyNode; }
 
     virtual float GetDecayingPositionOffsetLength() const { return decayingPositionOffset.GetLength(); }
     virtual float GetDecayingDifficultyFactor() const { return decayingDifficultyFactor; }
@@ -247,7 +285,7 @@ class HumanoidBase {
 
     void Hide() { fullbodyNode->SetPosition(Vector3(1000, 1000, -1000)); hairStyle->SetPosition(Vector3(1000, 1000, -1000)); } // hax ;)
 
-    void SetKit(boost::intrusive_ptr < Resource<Surface> > newKit);
+    void SetKit(blunted::intrusive_ptr < Resource<Surface> > newKit);
 
     virtual void ResetSituation(const Vector3 &focusPos);
 
@@ -296,26 +334,26 @@ class HumanoidBase {
     Vector3 ForceIntoPreferredDirectionVec(const Vector3 &src) const;
     radian ForceIntoPreferredDirectionAngle(radian angle) const;
 
-    boost::intrusive_ptr<Node> fullbodyNode;
+    blunted::intrusive_ptr<Node> fullbodyNode;
     std::vector<FloatArray> uniqueFullbodyMesh;
     std::vector < std::vector<WeightedVertex> > weightedVerticesVec; // < subgeoms < vertices > >
     unsigned int fullbodySubgeomCount;
     std::vector<int*> uniqueIndicesVec;
     std::vector<Joint> joints;
     Vector3 fullbodyOffset;
-    boost::intrusive_ptr<Node> fullbodyTargetNode;
+    blunted::intrusive_ptr<Node> fullbodyTargetNode;
 
-    boost::intrusive_ptr<Node> humanoidNode;
-    boost::shared_ptr<Scene3D> scene3D;
+    blunted::intrusive_ptr<Node> humanoidNode;
+    std::shared_ptr<Scene3D> scene3D;
 
-    boost::intrusive_ptr<Geometry> hairStyle;
+    blunted::intrusive_ptr<Geometry> hairStyle;
 
     std::string kitDiffuseTextureIdentString;
 
     Match *match;
     PlayerBase *player;
 
-    boost::shared_ptr<AnimCollection> anims;
+    std::shared_ptr<AnimCollection> anims;
     NodeMap nodeMap;
 
     AnimApplyBuffer animApplyBuffer;
@@ -389,6 +427,25 @@ class HumanoidBase {
     std::vector<radian> preferredDirectionAngles;
 
     MovementHistory movementHistory;
+
+    ProceduralIKBuffer buf_ik;
+    ProceduralIKBuffer fetchedbuf_ik;
+    unsigned long ikResetCounter = 0;
+    unsigned long appliedIKResetCounter = 0;
+    FootLockState leftFootLock;
+    FootLockState rightFootLock;
+    radian smoothedLookYaw = 0.0f;
+    radian smoothedLookPitch = 0.0f;
+
+    Node *ikLeftThigh = nullptr;
+    Node *ikLeftKnee = nullptr;
+    Node *ikLeftAnkle = nullptr;
+    Node *ikRightThigh = nullptr;
+    Node *ikRightKnee = nullptr;
+    Node *ikRightAnkle = nullptr;
+    Node *ikBody = nullptr;
+    blunted::intrusive_ptr<Geometry> fullbodyGeometry;
+    std::vector<Matrix4> boneMatricesScratch;
 
 };
 

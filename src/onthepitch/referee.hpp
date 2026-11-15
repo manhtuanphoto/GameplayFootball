@@ -46,6 +46,8 @@ class Referee {
     void Process();
 
     void PrepareSetPiece(e_SetPiece setPiece);
+    Vector3 GenerateFreeKickSpot();
+    void QueueNextFreeKickScenario(bool immediate);
 
     const RefereeBuffer &GetBuffer() { return buffer; };
 
@@ -61,7 +63,7 @@ class Referee {
   protected:
     Match *match;
 
-    boost::shared_ptr<Scene3D> scene3D;
+    std::shared_ptr<Scene3D> scene3D;
 
     RefereeBuffer buffer;
 
@@ -71,7 +73,10 @@ class Referee {
 
     Foul foul;
 
-    boost::intrusive_ptr<Sound> whistle[4]; // 0: short, 1: long, 2: half time, 3: full time
+    unsigned long freeKickPlayStart_ms;
+    unsigned long gkRetainStart_ms;
+
+    blunted::intrusive_ptr<Sound> whistle[4]; // 0: short, 1: long, 2: half time, 3: full time
 
 };
 

@@ -21,10 +21,13 @@
 #include "defines.hpp"
 
 #include "base/math/vector3.hpp"
+#include <functional>
+#include <string_view>
 
 namespace blunted {
 
-  typedef std::map <std::string, std::string> map_Properties;
+  typedef std::map<std::string, std::string, std::less<>> map_Properties;
+  typedef std::map<std::string, real, std::less<>> map_NumericProperties;
 
   class Vector3;
 
@@ -55,6 +58,7 @@ namespace blunted {
 
     protected:
       map_Properties properties;
+      map_NumericProperties numericProperties;
 
       static std::string emptyString;
   };

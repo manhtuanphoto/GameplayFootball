@@ -7,11 +7,12 @@
 
 #include "defines.hpp"
 
-#include <boost/thread/mutex.hpp>
-#include <boost/thread/condition.hpp>
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
+#include <string>
 
 #include "types/refcounted.hpp"
-#include "types/lockable.hpp"
 
 namespace blunted {
 
@@ -21,21 +22,22 @@ namespace blunted {
       Command(const std::string &name);
       virtual ~Command();
 
-      bool IsReady();
+      inline bool IsReady() const { return handled.load(std::memory_order_acquire); }
       void Reset();
       bool Handle(void *caller = NULL);
       void Wait();
 
-      std::string GetName() const { return name.GetData(); }
+      const std::string &GetName() const { return name; }
 
     protected:
       virtual bool Execute(void *caller = NULL) = 0;
+      virtual void OnHandled() {}
 
-      boost::mutex mutex; // locks 'handled & processed'
-      bool handled;
-      boost::condition processed;
+      std::mutex mutex; // locks 'handled & processed'
+      std::atomic<bool> handled;
+      std::condition_variable processed;
 
-      Lockable<std::string> name;
+      std::string name;
 
   };
 }

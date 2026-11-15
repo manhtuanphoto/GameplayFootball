@@ -30,7 +30,7 @@ namespace blunted {
     subjectMutex.unlock();
   }
 
-  void Joint::Connect(boost::intrusive_ptr<Geometry> object1, boost::intrusive_ptr<Geometry> object2, const Vector3 &anchor, const Vector3 &axis1, const Vector3 &axis2) {
+  void Joint::Connect(blunted::intrusive_ptr<Geometry> object1, blunted::intrusive_ptr<Geometry> object2, const Vector3 &anchor, const Vector3 &axis1, const Vector3 &axis2) {
     subjectMutex.lock();
 
     int observersSize = observers.size();

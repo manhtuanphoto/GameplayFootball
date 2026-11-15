@@ -14,7 +14,7 @@ namespace blunted {
   class Console {
 
     public:
-      Console(boost::shared_ptr<Scene2D> scene2D, int numlines = 6);
+      Console(std::shared_ptr<Scene2D> scene2D, int numlines = 6);
       ~Console();
 
       // accepts values from base/log.hpp
@@ -25,20 +25,20 @@ namespace blunted {
       void UpdateImages();
       int CalculateY(int lineNum);
 
-      boost::shared_ptr<Scene2D> scene2D;
+      std::shared_ptr<Scene2D> scene2D;
 
       Text2D *text2D;
 
-      std::vector < boost::intrusive_ptr<Image2D> > images;
+      std::vector < blunted::intrusive_ptr<Image2D> > images;
       std::vector < std::string > lines;
       std::vector < Vector3> colors;
 
-      boost::intrusive_ptr<Image2D> input;
+      blunted::intrusive_ptr<Image2D> input;
 
       int lineheight;
       int numlines;
 
-      boost::signals2::connection logConn;
+      blunted::SignalConnection logConn;
 
   };
 

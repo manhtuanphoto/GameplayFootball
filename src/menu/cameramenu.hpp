@@ -24,6 +24,7 @@ class CameraPage : public Gui2Page {
     void OnClose();
 
     void UpdateCamera();
+    void ApplyPreset(float zoom, float height, float fov, float angle);
 
   protected:
     Gui2Slider *sliderZoom;

@@ -28,12 +28,15 @@ namespace blunted {
       Gui2IconSelector(Gui2WindowManager *windowManager, const std::string &name, float x_percent, float y_percent, float width_percent, float height_percent, const std::string &caption);
       virtual ~Gui2IconSelector();
 
-      virtual void GetImages(std::vector < boost::intrusive_ptr<Image2D> > &target);
+      virtual void GetImages(std::vector < blunted::intrusive_ptr<Image2D> > &target);
 
       virtual void Process();
       virtual void Redraw();
 
       std::string GetSelectedEntryID() { if (entries.size() > 0) return entries.at(selectedEntry).id; else return ""; }
+      int GetEntryCount() const { return (int)entries.size(); }
+      void SelectEntryByIndex(int index, bool animate = false);
+      bool SelectEntryByID(const std::string &id, bool animate = false);
       void ClearEntries();
       void AddEntry(const std::string &id, const std::string &caption, const std::string &imageFile);
 
@@ -42,11 +45,11 @@ namespace blunted {
       virtual void OnGainFocus();
       virtual void OnLoseFocus();
 
-      boost::signals2::signal<void()> sig_OnClick;
-      boost::signals2::signal<void()> sig_OnChange;
+      blunted::Signal<void()> sig_OnClick;
+      blunted::Signal<void()> sig_OnChange;
 
     protected:
-      boost::intrusive_ptr<Image2D> image;
+      blunted::intrusive_ptr<Image2D> image;
 
       std::string caption;
 

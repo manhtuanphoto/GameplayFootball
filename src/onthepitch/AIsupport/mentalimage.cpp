@@ -10,6 +10,8 @@ MentalImage::MentalImage(Match *match) : match(match) {
   timeStampNeg_ms = 0;
   maxDistanceDeviation = 2.5f; // if reality is this much (or more) off from mental image, enforce as maximum offset
   maxMovementDeviation = walkVelocity;
+  players.reserve(24);
+  allPlayersScratch.reserve(24);
 }
 
 MentalImage::~MentalImage() {
@@ -17,14 +19,14 @@ MentalImage::~MentalImage() {
 
 void MentalImage::TakeSnapshot() {
   players.clear();
+  allPlayersScratch.clear();
 
-  std::vector<Player*> allPlayers;
-  match->GetTeam(0)->GetActivePlayers(allPlayers);
-  match->GetTeam(1)->GetActivePlayers(allPlayers);
+  match->GetTeam(0)->GetActivePlayers(allPlayersScratch);
+  match->GetTeam(1)->GetActivePlayers(allPlayersScratch);
 
-  for (int playerCounter = 0; playerCounter < (signed int)allPlayers.size(); playerCounter++) {
+  for (int playerCounter = 0; playerCounter < (signed int)allPlayersScratch.size(); playerCounter++) {
 
-    Player *player = allPlayers.at(playerCounter);
+    Player *player = allPlayersScratch[playerCounter];
 
     PlayerImage playerImage;
     playerImage.teamID = player->GetTeamID();
@@ -46,12 +48,14 @@ void MentalImage::TakeSnapshot() {
 
 PlayerImage MentalImage::GetPlayerImage(int playerID) const {
 
+  const float dt_sec = GetTimeStampNeg_ms() * 0.001f;
   for (unsigned int playerCounter = 0; playerCounter < players.size(); playerCounter++) {
 
-    if (players.at(playerCounter).playerID == playerID) {
-      PlayerImage newImage = players.at(playerCounter);
-      Vector3 extrapolation = players.at(playerCounter).movement * GetTimeStampNeg_ms() * 0.001f;
-      newImage.position = players.at(playerCounter).position + extrapolation;
+    const PlayerImage &snap = players[playerCounter];
+    if (snap.playerID == playerID) {
+      PlayerImage newImage = snap;
+      Vector3 extrapolation = snap.movement * dt_sec;
+      newImage.position = snap.position + extrapolation;
       newImage.position = newImage.position.EnforceMaximumDeviation(newImage.player->GetPosition(), maxDistanceDeviation);
       newImage.movement = newImage.movement.EnforceMaximumDeviation(newImage.player->GetMovement(), maxMovementDeviation);
       return newImage;
@@ -63,18 +67,15 @@ PlayerImage MentalImage::GetPlayerImage(int playerID) const {
 }
 
 void MentalImage::GetTeamPlayerImages(int teamID, int exceptPlayerID, std::vector<PlayerImage> &playerImages) const {
+  const float dt_sec = GetTimeStampNeg_ms() * 0.001f;
   for (unsigned int playerCounter = 0; playerCounter < players.size(); playerCounter++) {
-    //printf("playercounter: %i\n", playerCounter);
-    //printf("active players size: %i\n", players.size());
-    //printf("player id: %i\n", players.at(playerCounter).playerID);
-    Player *player = match->GetPlayer(players.at(playerCounter).playerID);
-    assert(player);
-    if (player->IsActive() && player->GetTeamID() == teamID && player->GetID() != exceptPlayerID) {
-      PlayerImage newImage = players.at(playerCounter);
-      Vector3 extrapolation = players.at(playerCounter).movement * GetTimeStampNeg_ms() * 0.001f;
-      newImage.position = players.at(playerCounter).position + extrapolation;
+    const PlayerImage &snap = players[playerCounter];
+    if (snap.teamID == teamID && snap.playerID != exceptPlayerID && snap.player && snap.player->IsActive()) {
+      PlayerImage newImage = snap;
+      Vector3 extrapolation = snap.movement * dt_sec;
+      newImage.position = snap.position + extrapolation;
       newImage.position = newImage.position.EnforceMaximumDeviation(newImage.player->GetPosition(), maxDistanceDeviation);
-      newImage.movement = newImage.movement.EnforceMaximumDeviation(newImage.player->GetMovement(), maxMovementDeviation); // new
+      newImage.movement = newImage.movement.EnforceMaximumDeviation(newImage.player->GetMovement(), maxMovementDeviation);
       playerImages.push_back(newImage);
     }
   }

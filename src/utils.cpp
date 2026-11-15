@@ -8,8 +8,15 @@
 
 #include "systems/graphics/resources/texture.hpp"
 #include "managers/resourcemanagerpool.hpp"
+#include <cctype>
 
-#include <boost/algorithm/string.hpp>
+namespace {
+  void TrimStringInPlace(std::string &s) {
+    auto notSpace = [](unsigned char ch) { return !std::isspace(ch); };
+    s.erase(s.begin(), std::find_if(s.begin(), s.end(), notSpace));
+    s.erase(std::find_if(s.rbegin(), s.rend(), notSpace).base(), s.end());
+  }
+}
 
 float GetQuantizedDirectionBias() {
   return GetConfiguration()->GetReal("gameplay_quantizeddirectionbias", _default_QuantizedDirectionBias);
@@ -32,7 +39,7 @@ void QuantizeDirection(Vector3 &inputDirection, float bias) {
   inputDirection = (inputDirectionNorm * (1.0 - bias) + (Vector3(1, 0, 0).GetRotated2D(angle) * bias)).GetNormalized(inputDirectionNorm) * inputDirection.GetLength();
 }
 
-Vector3 GetProjectedCoord(const Vector3 &pos3D, boost::intrusive_ptr<Camera> camera) {
+Vector3 GetProjectedCoord(const Vector3 &pos3D, blunted::intrusive_ptr<Camera> camera) {
   Matrix4 rotMat;
   rotMat.ConstructInverse(camera->GetDerivedPosition(), Vector3(1, 1, 1), camera->GetDerivedRotation());
   float fov = camera->GetFOV();
@@ -125,7 +132,7 @@ void GetWeightedPositions(const std::string &positionString, std::vector<Weighte
   tokenize(positionString, positions, ",");
   for (unsigned int i = 0; i < positions.size(); i++) {
     // trim leading/trailing space
-    boost::algorithm::trim(positions.at(i));
+    TrimStringInPlace(positions.at(i));
     // remove L/C/R notice (after space)
     std::size_t firstspace = positions.at(i).find_first_of(" ");
     if (firstspace != std::string::npos) positions.at(i) = positions.at(i).substr(0, firstspace);
@@ -611,7 +618,7 @@ template <> TemporalValue<Quaternion>::TemporalValue() {
 template <typename T> TemporalSmoother<T>::TemporalSmoother() {
   //snapshotSize = 3;
   snapshotSize = 3 + int(ceil(temporalSmoother_history_ms / 10.0f)); // not sure how to calculate proper number?
-  values = boost::circular_buffer< TemporalValue<T> >(snapshotSize);
+  values = CircularBuffer< TemporalValue<T> >(snapshotSize);
 }
 
 template <typename T> void TemporalSmoother<T>::SetValue(const T &data, unsigned long valueTime_ms) {
@@ -670,7 +677,7 @@ template <typename T> T TemporalSmoother<T>::GetValue(unsigned long currentTime_
   // else if (targetTime_ms > value2.time_ms) printf(">");
   // else printf("_");
 
-  if (debug) printf("current: %lu, target: %lu, t1: %lu, t2: %lu, t1index/t2index/size: %i/%i/%lu\n", currentTime_ms, targetTime_ms, value1.time_ms, value2.time_ms, t1index, t2index, values.size());
+  if (debug) printf("current: %lu, target: %lu, t1: %lu, t2: %lu, t1index/t2index/size: %i/%i/%zu\n", currentTime_ms, targetTime_ms, value1.time_ms, value2.time_ms, t1index, t2index, values.size());
   // if (value1.time_ms == 0) printf("1");
   // if (value2.time_ms == 0) printf("2");
   if (value1.time_ms == 0) return value2.data;

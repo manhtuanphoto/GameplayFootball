@@ -233,12 +233,14 @@ void HumanController::RequestCommand(PlayerCommandQueue &commandQueue) {
     }
   }
 
-  // set piece?
-  if ((match->IsInSetPiece() && team->GetController()->GetPieceTaker() == player && (actionMode != 2 || (actionMode == 2 && hid->GetButton(actionButton)) || match->GetBallRetainer() == player)) ||
+  // set piece or keeper holding ball in hands?
+  if (match->GetBallRetainer() == player) {
+    _SetPieceCommand(commandQueue);
+    return;
+  }
+  if ((match->IsInSetPiece() && team->GetController()->GetPieceTaker() == player && (actionMode != 2 || (actionMode == 2 && hid->GetButton(actionButton)))) ||
       (match->IsInSetPiece() && team->GetController()->GetPieceTaker() != player && match->GetBallRetainer() == 0)) {
     _SetPieceCommand(commandQueue);
-    //if (team->GetController()->GetPieceTaker() == player) printf("waiting to take set piece!\n");
-    //if (team->GetController()->GetPieceTaker() != player) printf("waiting for teammate to take set piece!\n");
     return;
   }
 
@@ -270,6 +272,13 @@ void HumanController::RequestCommand(PlayerCommandQueue &commandQueue) {
       inputVelocityFloat = CastPlayer()->GetFloatVelocity() * dot;
     }
 
+    // Goalkeeper hand saves & catches inside penalty box
+    if (CastPlayer()->GetFormationEntry().role == e_PlayerRole_GK) {
+      float ballSpeed = match->GetBall()->GetMovement().GetLength();
+      bool onlyPickup = (ballSpeed < 7.5f && CastPlayer()->HasUniquePossession());
+      _KeeperDeflectCommand(commandQueue, onlyPickup);
+    }
+
     // ball control?
     bool keepCurrentBodyDirection = false;
     // sidestep dribble disabled for now, too quirky: if (hid->GetButton(e_ButtonFunction_Dribble)) keepCurrentBodyDirection = true;
@@ -288,6 +297,26 @@ void HumanController::RequestCommand(PlayerCommandQueue &commandQueue) {
     bool byAnyMeans = false;
     if (hid->GetButton(e_ButtonFunction_Pressure)) byAnyMeans = true;
     _InterfereCommand(commandQueue, byAnyMeans);
+  }
+
+  // Post-goal celebration specials for Human-controlled players
+  if (!match->IsInPlay() && match->IsGoalScored() && match->GetLastGoalTeamID() == team->GetID()) {
+    unsigned long celElapsed = match->GetActualTime_ms() - match->GetReferee()->GetBuffer().stopTime;
+    bool triggerCelButton = hid->GetButton(e_ButtonFunction_Shot) ||
+                            hid->GetButton(e_ButtonFunction_ShortPass) ||
+                            hid->GetButton(e_ButtonFunction_HighPass) ||
+                            hid->GetButton(e_ButtonFunction_LongPass);
+    if (triggerCelButton || (celElapsed > 2200 && celElapsed < 9200 && rawInputVelocityFloat < dribbleVelocity)) {
+      PlayerCommand celCmd;
+      celCmd.desiredFunctionType = e_FunctionType_Special;
+      celCmd.useSpecialVar1 = true;
+      celCmd.specialVar1 = 1;
+      celCmd.useSpecialVar2 = true;
+      celCmd.specialVar2 = (team->GetLastTouchPlayer() == player) ? 2 : 1;
+      celCmd.useDesiredMovement = false;
+      celCmd.useDesiredLookAt = false;
+      commandQueue.push_back(celCmd);
+    }
   }
 
   // movement
@@ -364,7 +393,8 @@ void HumanController::Process() {
 
     // what is the context: do we want defend buttons or pass/shot buttons?
     float possessionContext = possessionAmount - 1.0f;
-    if (match->GetDesignatedPossessionPlayer() == player) {
+    if (match->GetDesignatedPossessionPlayer() == player ||
+        (match->IsInSetPiece() && team->GetController()->GetPieceTaker() == player)) {
       possessionContext = 1.0f; // new (keeper was allowed doing slidings before free kick sometimes lol, sign something was wrong)
     } else {
       // in situations where we aren't the designated player, we sometimes still want to do ball stuff, because we could try to extend our leg to pass, for example

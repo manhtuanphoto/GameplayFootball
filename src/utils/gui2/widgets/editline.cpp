@@ -54,7 +54,7 @@ namespace blunted {
   Gui2EditLine::~Gui2EditLine() {
   }
 
-  void Gui2EditLine::GetImages(std::vector < boost::intrusive_ptr<Image2D> > &target) {
+  void Gui2EditLine::GetImages(std::vector < blunted::intrusive_ptr<Image2D> > &target) {
     Gui2View::GetImages(target);
   }
 

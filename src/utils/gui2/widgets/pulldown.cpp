@@ -21,7 +21,7 @@ namespace blunted {
     selectedEntry = 0;
 
     pulldownButton = new Gui2Button(windowManager, name + "_pulldownbutton", 0, 0, width_percent, 3, "tmp");
-    pulldownButton->sig_OnClick.connect(boost::bind(&Gui2Pulldown::PullDownOrUp, this));
+    pulldownButton->sig_OnClick.connect(blunted::Bind(&Gui2Pulldown::PullDownOrUp, this));
     this->AddView(pulldownButton);
     pulldownButton->Show();
 
@@ -40,7 +40,7 @@ namespace blunted {
   void Gui2Pulldown::AddEntry(const std::string &caption, const std::string &name) {
 
     Gui2Button *button = new Gui2Button(windowManager, name + "_entry" + int_to_str(entries.size()), 0, 0, width_percent - 1, 3, caption);
-    button->sig_OnClick.connect(boost::bind(&Gui2Pulldown::Select, this, entries.size()));
+    button->sig_OnClick.connect(blunted::Bind(&Gui2Pulldown::Select, this, entries.size()));
 
     PulldownEntry entry;
     entry.name = name;

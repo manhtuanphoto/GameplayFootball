@@ -46,6 +46,52 @@ namespace blunted {
 
   };
 
+  class Renderer3DMessage_SetWindowMode : public Command {
+
+    public:
+      Renderer3DMessage_SetWindowMode(int width, int height, bool fullscreen) : Command("r3dmsg_SetWindowMode"), width(width), height(height), fullscreen(fullscreen) {};
+
+    protected:
+      virtual bool Execute(void *caller = NULL) {
+        static_cast<Renderer3D*>(caller)->SetWindowMode(width, height, fullscreen);
+        return true;
+      }
+
+      int width, height;
+      bool fullscreen;
+
+  };
+
+  class Renderer3DMessage_SetVSync : public Command {
+
+    public:
+      Renderer3DMessage_SetVSync(bool enabled) : Command("r3dmsg_SetVSync"), enabled(enabled) {};
+
+    protected:
+      virtual bool Execute(void *caller = NULL) {
+        static_cast<Renderer3D*>(caller)->SetVSync(enabled);
+        return true;
+      }
+
+      bool enabled;
+
+  };
+
+  class Renderer3DMessage_SetAntiAliasing : public Command {
+
+    public:
+      Renderer3DMessage_SetAntiAliasing(e_AntiAliasingMode mode) : Command("r3dmsg_SetAntiAliasing"), mode(mode) {};
+
+    protected:
+      virtual bool Execute(void *caller = NULL) {
+        static_cast<Renderer3D*>(caller)->SetAntiAliasingMode(mode);
+        return true;
+      }
+
+      e_AntiAliasingMode mode;
+
+  };
+
   class Renderer3DMessage_SwapBuffers : public Command {
 
     public:
@@ -165,13 +211,13 @@ namespace blunted {
   class Renderer3DMessage_CreateVertexBuffer : public Command {
 
     public:
-      Renderer3DMessage_CreateVertexBuffer(float *vertices, unsigned int verticesDataSize, std::vector<unsigned int> indices, e_VertexBufferUsage usage) : Command("r3dmsg_CreateVertexBuffer"), vertices(vertices), verticesDataSize(verticesDataSize), indices(indices), usage(usage) {};
+      Renderer3DMessage_CreateVertexBuffer(float *vertices, unsigned int verticesDataSize, std::vector<unsigned int> indices, e_VertexBufferUsage usage, const std::vector<float> &skinData = std::vector<float>()) : Command("r3dmsg_CreateVertexBuffer"), vertices(vertices), verticesDataSize(verticesDataSize), indices(indices), usage(usage), skinData(skinData) {};
 
       VertexBufferID vertexBufferID;
 
     protected:
       virtual bool Execute(void *caller = NULL) {
-        vertexBufferID = static_cast<Renderer3D*>(caller)->CreateVertexBuffer(vertices, verticesDataSize, indices, usage);
+        vertexBufferID = static_cast<Renderer3D*>(caller)->CreateVertexBuffer(vertices, verticesDataSize, indices, usage, skinData);
 
         return true;
       }
@@ -180,6 +226,7 @@ namespace blunted {
       unsigned int verticesDataSize;
       std::vector<unsigned int> indices;
       e_VertexBufferUsage usage;
+      std::vector<float> skinData;
 
   };
 

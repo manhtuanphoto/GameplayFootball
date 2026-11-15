@@ -44,7 +44,7 @@ class UpdateFullbodyModel : public Command {
 class UploadFullbodyModel : public Command {
 
   public:
-    UploadFullbodyModel(std::vector < boost::intrusive_ptr<Geometry> > geometryToUpload) : Command("UploadFullBodyModel"), geometryToUpload(geometryToUpload) {};
+    UploadFullbodyModel(std::vector < blunted::intrusive_ptr<Geometry> > geometryToUpload) : Command("UploadFullBodyModel"), geometryToUpload(geometryToUpload) {};
     virtual ~UploadFullbodyModel() {};
 
   protected:
@@ -55,7 +55,7 @@ class UploadFullbodyModel : public Command {
       return true;
     }
 
-    std::vector < boost::intrusive_ptr<Geometry> > geometryToUpload; // use shared pointers to geometry objects instead, to assure lifetime
+    std::vector < blunted::intrusive_ptr<Geometry> > geometryToUpload; // use shared pointers to geometry objects instead, to assure lifetime
 
 };
 
@@ -88,16 +88,16 @@ class GameTask : public IUserTask {
 
     virtual std::string GetName() const { return "game"; }
 
-    boost::mutex matchLifetimeMutex;
+    std::mutex matchLifetimeMutex;
 
   protected:
     Match *match;
     MenuScene *menuScene;
 
-    boost::timed_mutex matchPutBufferMutex;
-    boost::mutex menuSceneLifetimeMutex;
+    std::timed_mutex matchPutBufferMutex;
+    std::mutex menuSceneLifetimeMutex;
 
-    boost::shared_ptr<Scene3D> scene3D;
+    std::shared_ptr<Scene3D> scene3D;
 
 };
 

@@ -23,7 +23,7 @@ namespace blunted {
 
       virtual void Exit();
 
-      virtual void Connect(boost::intrusive_ptr<Geometry> object1, boost::intrusive_ptr<Geometry> object2, const Vector3 &anchor, const Vector3 &axis1, const Vector3 &axis2);
+      virtual void Connect(blunted::intrusive_ptr<Geometry> object1, blunted::intrusive_ptr<Geometry> object2, const Vector3 &anchor, const Vector3 &axis1, const Vector3 &axis2);
 
       virtual void SetStops(radian lowStop, radian highStop, int paramNum = 1);
       // desired velocity
@@ -47,7 +47,7 @@ namespace blunted {
   class IJointInterpreter : public Interpreter {
 
     public:
-      virtual void OnLoad(boost::intrusive_ptr<Joint> joint, boost::intrusive_ptr<Geometry> object1, boost::intrusive_ptr<Geometry> object2, const Vector3 &anchor, const Vector3 &axis1, const Vector3 &axis2) = 0;
+      virtual void OnLoad(blunted::intrusive_ptr<Joint> joint, blunted::intrusive_ptr<Geometry> object1, blunted::intrusive_ptr<Geometry> object2, const Vector3 &anchor, const Vector3 &axis1, const Vector3 &axis2) = 0;
       virtual void OnUnload() = 0;
 
       virtual void SetStops(radian lowStop, radian highStop, int paramNum = 1) = 0;

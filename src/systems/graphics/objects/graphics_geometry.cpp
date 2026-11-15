@@ -26,23 +26,46 @@
 
 namespace blunted {
 
-  GraphicsGeometry::GraphicsGeometry(GraphicsScene *graphicsScene) : GraphicsObject(graphicsScene) {
+  GraphicsGeometry::GraphicsGeometry(GraphicsScene *graphicsScene)
+      : GraphicsObject(graphicsScene),
+        vertexBufferIndices(std::make_shared<std::vector<VertexBufferIndex>>()) {
   }
 
   GraphicsGeometry::~GraphicsGeometry() {
   }
 
-  boost::intrusive_ptr<Interpreter> GraphicsGeometry::GetInterpreter(e_ObjectType objectType) {
+  void GraphicsGeometry::SetBoneMatrices(const std::vector<Matrix4> &matrices) {
+    boneMatrices = matrices;
+    if (matrices.empty()) {
+      packedBoneMatrices.reset();
+      return;
+    }
+    if (!packedBoneMatrices || packedBoneMatrices.use_count() > 1) {
+      packedBoneMatrices = std::make_shared<std::array<float, 256>>();
+    }
+    float *dst = packedBoneMatrices->data();
+    const unsigned int count = matrices.size() < 16 ? (unsigned int)matrices.size() : 16u;
+    for (unsigned int b = 0; b < count; b++) {
+      memcpy(&dst[b * 16], matrices[b].elements, 16 * sizeof(float));
+    }
+    for (unsigned int b = count; b < 16; b++) {
+      for (int m = 0; m < 16; m++) {
+        dst[b * 16 + m] = (float)MATRIX4_IDENTITY[m];
+      }
+    }
+  }
+
+  blunted::intrusive_ptr<Interpreter> GraphicsGeometry::GetInterpreter(e_ObjectType objectType) {
     if (objectType == e_ObjectType_Geometry) {
-      boost::intrusive_ptr<GraphicsGeometry_GeometryInterpreter> geometryInterpreter(new GraphicsGeometry_GeometryInterpreter(this));
+      blunted::intrusive_ptr<GraphicsGeometry_GeometryInterpreter> geometryInterpreter(new GraphicsGeometry_GeometryInterpreter(this));
       return geometryInterpreter;
     }
     else if (objectType == e_ObjectType_Skybox) {
-      boost::intrusive_ptr<GraphicsGeometry_SkyboxInterpreter> skyboxInterpreter(new GraphicsGeometry_SkyboxInterpreter(this));
+      blunted::intrusive_ptr<GraphicsGeometry_SkyboxInterpreter> skyboxInterpreter(new GraphicsGeometry_SkyboxInterpreter(this));
       return skyboxInterpreter;
     }
     Log(e_FatalError, "GraphicsGeometry", "GetInterpreter", "No appropriate interpreter found for this ObjectType");
-    return boost::intrusive_ptr<GraphicsGeometry_GeometryInterpreter>();
+    return blunted::intrusive_ptr<GraphicsGeometry_GeometryInterpreter>();
   }
 
   void GraphicsGeometry::SetPosition(const Vector3 &newPosition) {
@@ -67,10 +90,10 @@ namespace blunted {
   GraphicsGeometry_GeometryInterpreter::GraphicsGeometry_GeometryInterpreter(GraphicsGeometry *caller) : caller(caller), usesIndices(false) {
   }
 
-  void LoadMaterials(Renderer3D *renderer3D, const Material *material, Renderer3DMaterial &r3dMaterial, boost::intrusive_ptr < Resource<Texture> > diffuseTexture, boost::intrusive_ptr < Resource<Texture> > normalTexture, boost::intrusive_ptr < Resource<Texture> > specularTexture, boost::intrusive_ptr < Resource<Texture> > illuminationTexture) {
+  void LoadMaterials(Renderer3D *renderer3D, const Material *material, Renderer3DMaterial &r3dMaterial, blunted::intrusive_ptr < Resource<Texture> > diffuseTexture, blunted::intrusive_ptr < Resource<Texture> > normalTexture, blunted::intrusive_ptr < Resource<Texture> > specularTexture, blunted::intrusive_ptr < Resource<Texture> > illuminationTexture) {
 
     if (material->diffuseTexture) {
-      boost::intrusive_ptr < Resource<Surface> > surface = material->diffuseTexture;
+      blunted::intrusive_ptr < Resource<Surface> > surface = material->diffuseTexture;
 
       bool texAlreadyThere = false;
       diffuseTexture =
@@ -93,7 +116,7 @@ namespace blunted {
     }
 
     if (material->normalTexture) {
-      boost::intrusive_ptr < Resource<Surface> > surface = material->normalTexture;
+      blunted::intrusive_ptr < Resource<Surface> > surface = material->normalTexture;
 
       bool texAlreadyThere = false;
       normalTexture =
@@ -111,7 +134,7 @@ namespace blunted {
     }
 
     if (material->specularTexture) {
-      boost::intrusive_ptr < Resource<Surface> > surface = material->specularTexture;
+      blunted::intrusive_ptr < Resource<Surface> > surface = material->specularTexture;
 
       bool texAlreadyThere = false;
       specularTexture =
@@ -129,7 +152,7 @@ namespace blunted {
     }
 
     if (material->illuminationTexture) {
-      boost::intrusive_ptr < Resource<Surface> > surface = material->illuminationTexture;
+      blunted::intrusive_ptr < Resource<Surface> > surface = material->illuminationTexture;
 
       bool texAlreadyThere = false;
       illuminationTexture =
@@ -155,13 +178,13 @@ namespace blunted {
     r3dMaterial.self_illumination = material->self_illumination;
   }
 
-  void GraphicsGeometry_GeometryInterpreter::OnLoad(boost::intrusive_ptr<Geometry> geometry) {
+  void GraphicsGeometry_GeometryInterpreter::OnLoad(blunted::intrusive_ptr<Geometry> geometry) {
 
     // todo: rewrite that indices/usesIndices thing, it's very unclear what's going on
 
     //printf("loading %s\n", geometry->GetName().c_str());
 
-    boost::intrusive_ptr < Resource<GeometryData> > resource = geometry->GetGeometryData();
+    blunted::intrusive_ptr < Resource<GeometryData> > resource = geometry->GetGeometryData();
 
     resource->resourceMutex.lock();
     bool dynamicBuffer = resource->GetResource()->IsDynamic();
@@ -173,8 +196,15 @@ namespace blunted {
         Fetch(resource->GetIdentString(), false, alreadyThere, true); // false == don't try to use loader
     //printf("%s, %i\n", resource->GetIdentString().c_str(), alreadyThere);
 
-    std::vector < MaterializedTriangleMesh > triangleMeshes = resource->GetResource()->GetTriangleMeshes();
+    const std::vector < MaterializedTriangleMesh > &triangleMeshes = resource->GetResource()->GetTriangleMeshesRef();
     Renderer3D *renderer3D = caller->GetGraphicsScene()->GetGraphicsSystem()->GetRenderer3D();
+
+    if (!caller->vertexBufferIndices || caller->vertexBufferIndices.use_count() > 1) {
+      caller->vertexBufferIndices = std::make_shared<std::vector<VertexBufferIndex>>();
+    } else {
+      caller->vertexBufferIndices->clear();
+    }
+    caller->vertexBufferIndices->reserve(triangleMeshes.size());
 
     //std::vector<Triangle*> triangles;
 
@@ -182,15 +212,22 @@ namespace blunted {
     int verticesDataSize = 0;
     std::vector<unsigned int> indices;
     std::vector<unsigned int> indicesTest;
+    std::vector<float> combinedSkinData;
+    bool anySkinData = false;
     int indicesSize = 0;
     if (!alreadyThere) {
       caller->vertexBuffer->resourceMutex.lock();
       for (unsigned int i = 0; i < triangleMeshes.size(); i++) {
         verticesDataSize += triangleMeshes[i].verticesDataSize;
         indicesSize += triangleMeshes[i].indices.size();
+        if (!triangleMeshes[i].skinData.empty()) anySkinData = true;
       }
       vertices = new float[verticesDataSize];
       indices.reserve(indicesSize);
+      if (anySkinData) {
+        int totalVertices = (verticesDataSize / GetTriangleMeshElementCount()) / 3;
+        combinedSkinData.reserve(totalVertices * 8);
+      }
     }
 
     int startIndex = 0;
@@ -201,10 +238,10 @@ namespace blunted {
       // material
 
       const Material *material = &triangleMeshes.at(i).material;
-      boost::intrusive_ptr < Resource<Texture> > diffuseTexture;
-      boost::intrusive_ptr < Resource<Texture> > normalTexture;
-      boost::intrusive_ptr < Resource<Texture> > specularTexture;
-      boost::intrusive_ptr < Resource<Texture> > illuminationTexture;
+      blunted::intrusive_ptr < Resource<Texture> > diffuseTexture;
+      blunted::intrusive_ptr < Resource<Texture> > normalTexture;
+      blunted::intrusive_ptr < Resource<Texture> > specularTexture;
+      blunted::intrusive_ptr < Resource<Texture> > illuminationTexture;
 
       Renderer3DMaterial r3dMaterial;
       LoadMaterials(renderer3D, material, r3dMaterial, diffuseTexture, normalTexture, specularTexture, illuminationTexture);
@@ -229,6 +266,18 @@ namespace blunted {
                  triangleMeshes[i].verticesDataSize / GetTriangleMeshElementCount() * sizeof(float));
         }
 
+        if (anySkinData) {
+          int subVerts = (triangleMeshes[i].verticesDataSize / GetTriangleMeshElementCount()) / 3;
+          if ((int)triangleMeshes[i].skinData.size() == subVerts * 8) {
+            combinedSkinData.insert(combinedSkinData.end(), triangleMeshes[i].skinData.begin(), triangleMeshes[i].skinData.end());
+          } else {
+            for (int sv = 0; sv < subVerts; sv++) {
+              combinedSkinData.push_back(0.0f); combinedSkinData.push_back(0.0f); combinedSkinData.push_back(0.0f); combinedSkinData.push_back(0.0f);
+              combinedSkinData.push_back(1.0f); combinedSkinData.push_back(0.0f); combinedSkinData.push_back(0.0f); combinedSkinData.push_back(0.0f);
+            }
+          }
+        }
+
         //indices.insert(indices.end(), triangleMeshes[i].indices.begin(), triangleMeshes[i].indices.end());
         for (unsigned int index = 0; index < triangleMeshes[i].indices.size(); index++) {
           indices.push_back(startIndex / 3 + triangleMeshes[i].indices.at(index));
@@ -248,32 +297,35 @@ namespace blunted {
       }
 
       vbIndex.material = r3dMaterial;
-      caller->vertexBufferIndices.push_back(vbIndex);
+      caller->vertexBufferIndices->push_back(vbIndex);
     }
 
     resource->resourceMutex.unlock();
+
+    caller->SetBoneMatrices(geometry->GetBoneMatrices());
 
     if (indices.size() > 0) usesIndices = true; else usesIndices = false;
 
     if (!alreadyThere) {
       caller->vertexBuffer->GetResource()->SetTriangleMesh(vertices, verticesDataSize, indices);
+      caller->vertexBuffer->GetResource()->SetSkinData(combinedSkinData);
       caller->vertexBuffer->GetResource()->CreateOrUpdateVertexBuffer(renderer3D, dynamicBuffer);
       caller->vertexBuffer->resourceMutex.unlock();
     }
 
   }
 
-  void GraphicsGeometry_GeometryInterpreter::OnUpdateGeometry(boost::intrusive_ptr<Geometry> geometry, bool updateMaterials) {
+  void GraphicsGeometry_GeometryInterpreter::OnUpdateGeometry(blunted::intrusive_ptr<Geometry> geometry, bool updateMaterials) {
 
     // todo: right now, you can only go from using no indices to using indices. you cannot go back to not using indices anymore. fix this.
     // todo: rewrite that indices/usesIndices thing either way, it's very unclear what's going on
 
-    boost::intrusive_ptr < Resource<GeometryData> > resource = geometry->GetGeometryData();
+    blunted::intrusive_ptr < Resource<GeometryData> > resource = geometry->GetGeometryData();
 
     resource->resourceMutex.lock();
 
     bool dynamicBuffer = resource->GetResource()->IsDynamic();
-    std::vector < MaterializedTriangleMesh > triangleMeshes = resource->GetResource()->GetTriangleMeshes();
+    const std::vector < MaterializedTriangleMesh > &triangleMeshes = resource->GetResource()->GetTriangleMeshesRef();
     Renderer3D *renderer3D = caller->GetGraphicsScene()->GetGraphicsSystem()->GetRenderer3D();
 
     caller->vertexBuffer->resourceMutex.lock();
@@ -281,13 +333,20 @@ namespace blunted {
     int currentVerticesDataSize = caller->vertexBuffer->GetResource()->GetVerticesDataSize();
 
     std::vector<unsigned int> indices;
+    std::vector<float> combinedSkinData;
+    bool anySkinData = false;
     int verticesDataSize = 0;
     int indicesSize = 0;
     for (unsigned int i = 0; i < triangleMeshes.size(); i++) {
       verticesDataSize += triangleMeshes[i].verticesDataSize;
       indicesSize += triangleMeshes[i].indices.size();
+      if (!triangleMeshes[i].skinData.empty()) anySkinData = true;
     }
     indices.reserve(indicesSize);
+    if (anySkinData) {
+      int totalVertices = (verticesDataSize / GetTriangleMeshElementCount()) / 3;
+      combinedSkinData.reserve(totalVertices * 8);
+    }
     bool newFloatData = false;
     bool updateIndices = false;
     if (verticesDataSize == currentVerticesDataSize) {
@@ -304,7 +363,14 @@ namespace blunted {
     int startIndicesIndex = 0; // omfg
     int currentSize = 0;
 
-    if (updateIndices) caller->vertexBufferIndices.clear();
+    if (updateIndices) {
+      if (!caller->vertexBufferIndices || caller->vertexBufferIndices.use_count() > 1) {
+        caller->vertexBufferIndices = std::make_shared<std::vector<VertexBufferIndex>>();
+      } else {
+        caller->vertexBufferIndices->clear();
+      }
+      caller->vertexBufferIndices->reserve(triangleMeshes.size());
+    }
 
     for (unsigned int i = 0; i < triangleMeshes.size(); i++) {
 
@@ -319,6 +385,18 @@ namespace blunted {
         memcpy(&vertices[e * (verticesDataSize / GetTriangleMeshElementCount()) + startIndex],
                &triangleMeshes[i].vertices[e * (triangleMeshes[i].verticesDataSize / GetTriangleMeshElementCount())],
                triangleMeshes[i].verticesDataSize / GetTriangleMeshElementCount() * sizeof(float));
+      }
+
+      if (anySkinData) {
+        int subVerts = (triangleMeshes[i].verticesDataSize / GetTriangleMeshElementCount()) / 3;
+        if ((int)triangleMeshes[i].skinData.size() == subVerts * 8) {
+          combinedSkinData.insert(combinedSkinData.end(), triangleMeshes[i].skinData.begin(), triangleMeshes[i].skinData.end());
+        } else {
+          for (int sv = 0; sv < subVerts; sv++) {
+            combinedSkinData.push_back(0.0f); combinedSkinData.push_back(0.0f); combinedSkinData.push_back(0.0f); combinedSkinData.push_back(0.0f);
+            combinedSkinData.push_back(1.0f); combinedSkinData.push_back(0.0f); combinedSkinData.push_back(0.0f); combinedSkinData.push_back(0.0f);
+          }
+        }
       }
 
       if (!usesIndices) { // can only set indices once (todo: make OnUpdateIndices function, or something like that)
@@ -336,10 +414,10 @@ namespace blunted {
         // material
 
         const Material *material = &triangleMeshes.at(i).material;
-        boost::intrusive_ptr < Resource<Texture> > diffuseTexture;
-        boost::intrusive_ptr < Resource<Texture> > normalTexture;
-        boost::intrusive_ptr < Resource<Texture> > specularTexture;
-        boost::intrusive_ptr < Resource<Texture> > illuminationTexture;
+        blunted::intrusive_ptr < Resource<Texture> > diffuseTexture;
+        blunted::intrusive_ptr < Resource<Texture> > normalTexture;
+        blunted::intrusive_ptr < Resource<Texture> > specularTexture;
+        blunted::intrusive_ptr < Resource<Texture> > illuminationTexture;
 
         Renderer3DMaterial r3dMaterial;
         LoadMaterials(renderer3D, material, r3dMaterial, diffuseTexture, normalTexture, specularTexture, illuminationTexture);
@@ -365,7 +443,7 @@ namespace blunted {
         //printf("st %i VS %i\n", (indices.size() - triangleMeshes[i].indices.size()), startIndex / 3);
         //printf("si %i VS %i\n", triangleMeshes[i].indices.size(), currentSize / 3);
 
-        caller->vertexBufferIndices.push_back(vbIndex);
+        caller->vertexBufferIndices->push_back(vbIndex);
 
       }
 
@@ -380,6 +458,7 @@ namespace blunted {
     } else {
       caller->vertexBuffer->GetResource()->TriangleMeshWasUpdatedExternally(verticesDataSize, indices);
     }
+    caller->vertexBuffer->GetResource()->SetSkinData(combinedSkinData);
     caller->vertexBuffer->GetResource()->CreateOrUpdateVertexBuffer(renderer3D, dynamicBuffer);
     caller->vertexBuffer->resourceMutex.unlock();
   }
@@ -387,7 +466,8 @@ namespace blunted {
   void GraphicsGeometry_GeometryInterpreter::OnUnload() {
     //printf("resetting link to vertexbuffer.. ");
     caller->vertexBuffer.reset();
-    caller->vertexBufferIndices.clear();
+    caller->vertexBufferIndices.reset();
+    caller->packedBoneMatrices.reset();
     delete caller;
     caller = 0;
     //printf("[OK]\n");
@@ -401,16 +481,28 @@ namespace blunted {
     caller->SetRotation(rotation);
   }
 
+  void GraphicsGeometry_GeometryInterpreter::OnSetBoneMatrices(const std::vector<Matrix4> &matrices) {
+    caller->SetBoneMatrices(matrices);
+  }
+
   void GraphicsGeometry_GeometryInterpreter::GetVertexBufferQueue(std::deque<VertexBufferQueueEntry> &queue) {
-    //printf("size: %i\n", size);
     VertexBufferQueueEntry queueEntry;
-
-    queueEntry.vertexBufferIndices.insert(queueEntry.vertexBufferIndices.end(), caller->vertexBufferIndices.begin(), caller->vertexBufferIndices.end());
-
+    queueEntry.vertexBufferIndices = caller->vertexBufferIndices;
     queueEntry.vertexBuffer = caller->vertexBuffer;
+    queueEntry.vaoIDCache = caller->vertexBuffer ? caller->vertexBuffer->GetResource()->GetVaoID() : 0;
+    queueEntry.firstTexIDCache = (caller->vertexBufferIndices && !caller->vertexBufferIndices->empty() &&
+                                  (*caller->vertexBufferIndices)[0].material.diffuseTexture)
+                                   ? (*caller->vertexBufferIndices)[0].material.diffuseTexture->GetResource()->GetID()
+                                   : 0;
     queueEntry.position = caller->GetPosition();
     queueEntry.rotation = caller->GetRotation();
-    queue.push_back(queueEntry);
+    if (caller->packedBoneMatrices) {
+      queueEntry.hasSkinning = true;
+      queueEntry.boneMatrices = caller->packedBoneMatrices;
+    } else {
+      queueEntry.hasSkinning = false;
+    }
+    queue.push_back(std::move(queueEntry));
   }
 
   void GraphicsGeometry_GeometryInterpreter::OnSynchronize() {

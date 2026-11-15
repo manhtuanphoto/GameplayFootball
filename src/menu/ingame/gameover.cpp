@@ -26,10 +26,20 @@ GameOverPage::GameOverPage(Gui2WindowManager *windowManager, const Gui2PageData 
   this->AddView(header);
   header->Show();
 
-  buttonOkay = new Gui2Button(windowManager, "button_gameover_ok", 40, 82, 20, 3, "well then");
-  this->AddView(buttonOkay);
-  buttonOkay->Show();
-  buttonOkay->sig_OnClick.connect(boost::bind(&GameOverPage::GoMainMenu, this));
+  buttonRematch = new Gui2Button(windowManager, "button_gameover_rematch", 0, 0, 20, 3, "rematch");
+  buttonSandbox = new Gui2Button(windowManager, "button_gameover_sandbox", 0, 0, 20, 3, "sandbox (AI)");
+  buttonOkay = new Gui2Button(windowManager, "button_gameover_ok", 0, 0, 20, 3, "main menu");
+  buttonRematch->sig_OnClick.connect(blunted::Bind(&GameOverPage::GoRematch, this));
+  buttonSandbox->sig_OnClick.connect(blunted::Bind(&GameOverPage::GoSandbox, this));
+  buttonOkay->sig_OnClick.connect(blunted::Bind(&GameOverPage::GoMainMenu, this));
+
+  Gui2Grid *actionGrid = new Gui2Grid(windowManager, "grid_gameover_actions", 18, 81, 64, 6);
+  actionGrid->AddView(buttonRematch, 0, 0);
+  actionGrid->AddView(buttonSandbox, 0, 1);
+  actionGrid->AddView(buttonOkay, 0, 2);
+  actionGrid->UpdateLayout(0.5f);
+  this->AddView(actionGrid);
+  actionGrid->Show();
 
   float possession1 = match->GetMatchData()->GetPossessionTime_ms(0);
   float possession2 = match->GetMatchData()->GetPossessionTime_ms(1);
@@ -69,6 +79,12 @@ void GameOverPage::GoRematch() {
   this->Exit();
   Properties properties;
   windowManager->GetPageFactory()->CreatePage((int)e_PageID_Game, properties, 0);
+  delete this;
+}
+
+void GameOverPage::GoSandbox() {
+  this->Exit();
+  GetMenuTask()->SetMenuAction(e_MenuAction_Sandbox);
   delete this;
 }
 

@@ -43,6 +43,7 @@ namespace blunted {
   Uint32 sdl_getpixel(const SDL_Surface *surface, int x, int y);
   void sdl_line(SDL_Surface *surface, int x1, int y1, int x2, int y2, Uint32 color);
   void sdl_triangle_filled(SDL_Surface *surface, const Triangle &triangle, Uint8 r, Uint8 g, Uint8 b);
+  void sdl_triangle_filled_rgba(SDL_Surface *surface, const Triangle &triangle, Uint8 r, Uint8 g, Uint8 b, Uint8 a);
   void sdl_rectangle_filled(SDL_Surface *surface, int x, int y, int width, int height, Uint32 color);
   void sdl_alphablit(SDL_Surface *src, SDL_Rect *srcrect, SDL_Surface *dst, SDL_Rect *dstrect);
   void sdl_flipsurface(SDL_Surface *surface);

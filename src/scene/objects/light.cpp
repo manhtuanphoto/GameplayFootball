@@ -120,7 +120,7 @@ namespace blunted {
     subjectMutex.unlock();
   }
 
-  void Light::EnqueueShadowMap(boost::intrusive_ptr<Camera> camera, std::deque < boost::intrusive_ptr<Geometry> > visibleGeometry) {
+  void Light::EnqueueShadowMap(blunted::intrusive_ptr<Camera> camera, std::deque < blunted::intrusive_ptr<Geometry> > visibleGeometry) {
     subjectMutex.lock();
 
     int observersSize = observers.size();

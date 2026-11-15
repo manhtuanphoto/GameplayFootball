@@ -13,7 +13,7 @@ namespace blunted {
     clear.haveTo = false;
     clear.excludeSystem = e_SystemType_None;
     updateSpatialDataAfterPoke.SetData(clear);
-    pokePriority.SetData(0);
+    pokePriority.store(0, std::memory_order_relaxed);
     enabled = true;
   }
 
@@ -32,7 +32,7 @@ namespace blunted {
     clear.haveTo = false;
     clear.excludeSystem = e_SystemType_None;
     updateSpatialDataAfterPoke.SetData(clear);
-    pokePriority = src.GetPokePriority();
+    pokePriority.store(src.GetPokePriority(), std::memory_order_relaxed);
     enabled = src.enabled;
 
     assert(observers.size() == 0);
@@ -96,10 +96,10 @@ namespace blunted {
 
   void Object::Synchronize() {
     subjectMutex.lock();
-    boost::shared_ptr<Interpreter> result;
+    std::shared_ptr<Interpreter> result;
     int observersSize = observers.size();
     for (int i = 0; i < observersSize; i++) {
-      boost::intrusive_ptr<Interpreter> interpreter = static_pointer_cast<Interpreter>(observers.at(i));
+      blunted::intrusive_ptr<Interpreter> interpreter = static_pointer_cast<Interpreter>(observers.at(i));
       interpreter->OnSynchronize();
     }
     subjectMutex.unlock();
@@ -111,12 +111,12 @@ namespace blunted {
   inline void Object::RecursiveUpdateSpatialData(e_SpatialDataType spatialDataType, e_SystemType excludeSystem) {
   }
 
-  boost::intrusive_ptr<Interpreter> Object::GetInterpreter(e_SystemType targetSystemType) {
+  blunted::intrusive_ptr<Interpreter> Object::GetInterpreter(e_SystemType targetSystemType) {
     subjectMutex.lock();
-    boost::intrusive_ptr<Interpreter> result;
+    blunted::intrusive_ptr<Interpreter> result;
     int observersSize = observers.size();
     for (int i = 0; i < observersSize; i++) {
-      boost::intrusive_ptr<Interpreter> interpreter = static_pointer_cast<Interpreter>(observers.at(i));
+      blunted::intrusive_ptr<Interpreter> interpreter = static_pointer_cast<Interpreter>(observers.at(i));
       if (interpreter->GetSystemType() == targetSystemType) result = interpreter;
     }
     subjectMutex.unlock();

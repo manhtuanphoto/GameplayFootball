@@ -23,11 +23,11 @@ namespace blunted {
       virtual void Init();
       virtual void Exit(); // ATOMIC
 
-      void AddObject(boost::intrusive_ptr<Object> object);
-      void DeleteObject(boost::intrusive_ptr<Object> object);
-      void RemoveObject(boost::intrusive_ptr<Object> object);
+      void AddObject(blunted::intrusive_ptr<Object> object);
+      void DeleteObject(blunted::intrusive_ptr<Object> object);
+      void RemoveObject(blunted::intrusive_ptr<Object> object);
 
-      void GetObjects(e_ObjectType targetObjectType, std::vector < boost::intrusive_ptr<Object> > &gatherObjects);
+      void GetObjects(e_ObjectType targetObjectType, std::vector < blunted::intrusive_ptr<Object> > &gatherObjects);
       void PokeObjects(e_ObjectType targetObjectType, e_SystemType targetSystemType);
 
       void GetContextSize(int &width, int &height, int &bpp);

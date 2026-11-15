@@ -399,13 +399,12 @@ void AI_GetBestDribbleMovement(Match *match, int thisPlayerID, const MentalImage
     opponentPlayerImages.push_back(mentalImage->GetPlayerImage(opponents.at(i)->GetID()));
   }
 
-  float nearBackline = NormalizedClamp(fabs(player->GetPosition().coords[0]) / pitchHalfW, 0.0f, 1.0f);
-  float centerModifierInv =
-      1.0f -
-      std::pow(nearBackline,
-               2.0f);  // near the end of the pitch, we want to get inside again
-  centerModifierInv *= 0.5f; // stop going to the sides! wtf, todo, why does it prefer the sideline so much (probably because of no opponents :P)
-  Vector3 oppGoalPos = Vector3(-side * pitchHalfW, myPos.coords[1] * (1.0f - teamTactics.userProperties.GetReal("dribble_centermagnet", 0.5f)) * centerModifierInv, 0);
+  float attackingDepth = clamp((myPos.coords[0] * -side + pitchHalfW) / (pitchHalfW * 2.0f), 0.0f, 1.0f);
+  float centerMagnet = teamTactics.userProperties.GetReal("dribble_centermagnet", 0.5f);
+  // Cut inside toward dangerous half-spaces / penalty spot when entering final third
+  float finalThirdCutIn = NormalizedClamp(attackingDepth, 0.62f, 0.94f);
+  float targetYScale = (1.0f - centerMagnet * 0.65f) * (1.0f - finalThirdCutIn * 0.78f) * 0.5f;
+  Vector3 oppGoalPos = Vector3(-side * (pitchHalfW - finalThirdCutIn * 5.0f), myPos.coords[1] * targetYScale, 0);
 
 
   std::vector<ForceSpot> forceField;
@@ -415,42 +414,42 @@ void AI_GetBestDribbleMovement(Match *match, int thisPlayerID, const MentalImage
     const PlayerImage &oppImg = opponentPlayerImages.at(i);
 
     ForceSpot spot;
-    Vector3 oppPos = oppImg.position + oppImg.movement * future_sec;
+    Vector3 oppPos = oppImg.position + oppImg.movement * (future_sec + 0.08f);
     spot.origin = oppPos;
     spot.magnetType = e_MagnetType_Repel;
     spot.decayType = e_DecayType_Variable;
-    spot.power = 2.0f * powerMultiplier;//1.0f;
-    spot.scale = 10.0f;//16.0f;
-    spot.exp = 1.0f;//0.7f;
+    spot.power = 2.15f * powerMultiplier;
+    spot.scale = 10.5f;
+    spot.exp = 0.95f;
     forceField.push_back(spot);
 
     if (GetDebugMode() == e_DebugMode_AI && team->GetID() == 0) {
       int scrX, scrY;
       GetDebugOverlayCoord(match, spot.origin, scrX, scrY);
-      //GetDebugOverlay()->DrawLine(line, color, 240);
       Vector3 color(255, 100, 100);
-      //GetDebugOverlay()->PutPixel(scrX, scrY, color, 255);
       GetDebugOverlay()->DrawRectangle(scrX - 1, scrY - 1, 3, 3, color, 255);
     }
   }
 
-  // sideline / backline
+  // sideline / backline (stronger boundary cushion to prevent hugging touchlines or running out)
   {
     ForceSpot spot;
-    spot.origin = Vector3(myPos.coords[0], (pitchHalfH + 5.0f) * signSide(myPos.coords[1]), 0);
+    spot.origin = Vector3(myPos.coords[0], (pitchHalfH + 2.5f) * signSide(myPos.coords[1]), 0);
     spot.magnetType = e_MagnetType_Repel;
     spot.decayType = e_DecayType_Variable;
-    spot.power = 4.0f * powerMultiplier;
-    spot.scale = 20.0f;
-    spot.exp = 0.7f;
+    spot.power = 5.2f * powerMultiplier;
+    spot.scale = 22.0f;
+    spot.exp = 0.8f;
     forceField.push_back(spot);
 
-    spot.origin = Vector3((pitchHalfW + 5.0f) * signSide(myPos.coords[0]), myPos.coords[1], 0);
+    spot.origin = Vector3((pitchHalfW + 3.0f) * signSide(myPos.coords[0]), myPos.coords[1], 0);
     spot.magnetType = e_MagnetType_Repel;
     spot.decayType = e_DecayType_Variable;
-    spot.power = 4.0f * powerMultiplier;
-    spot.scale = 20.0f;
-    spot.exp = 0.7f;
+    // Allow driving deeper near the box if central, repel strongly near corner flags
+    float cornerPenalty = NormalizedClamp(fabs(myPos.coords[1]), 14.0f, pitchHalfH);
+    spot.power = (3.4f + 2.6f * cornerPenalty) * powerMultiplier;
+    spot.scale = 18.0f + 5.0f * cornerPenalty;
+    spot.exp = 0.8f;
     forceField.push_back(spot);
   }
 
@@ -974,16 +973,17 @@ float AI_GetTeamPossessionFactor(Match *match, Team *team) {
 Player *AI_GetClosestPlayer(Team *team, const Vector3 &position, bool onlyAIControlled, Player *except) {
   const std::vector<Player*> &players = team->GetAllPlayers();
 
-  float closestDistance = 10000;
+  float closestDistSq = 10000.0f * 10000.0f;
   Player *closestPlayer = 0;
 
   for (unsigned int i = 0; i < players.size(); i++) {
-    if (players.at(i)->IsActive() && players.at(i) != except) {
-      float distance = (players.at(i)->GetPosition() - position).GetLength();
-      if (distance < closestDistance) {
-        if (!onlyAIControlled || !team->IsHumanControlled(players.at(i)->GetID())) {
-          closestDistance = distance;
-          closestPlayer = players.at(i);
+    Player *p = players[i];
+    if (p->IsActive() && p != except) {
+      float distSq = (p->GetPosition() - position).GetSquaredLength();
+      if (distSq < closestDistSq) {
+        if (!onlyAIControlled || !team->IsHumanControlled(p->GetID())) {
+          closestDistSq = distSq;
+          closestPlayer = p;
         }
       }
     }
@@ -994,33 +994,32 @@ Player *AI_GetClosestPlayer(Team *team, const Vector3 &position, bool onlyAICont
 
 void AI_GetClosestPlayers(Team *team, const Vector3 &position, bool onlyAIControlled, std::vector<Player*> &result, unsigned int playerCount) {
   const std::vector<Player*> &players = team->GetAllPlayers();
-  std::multimap<float, Player*> tmpResult;
 
-  float closestDistance = 10000;
-  Player *closestPlayer = players.at(0);
+  struct DistPlayer {
+    float distSq;
+    Player *player;
+  };
+  DistPlayer candidates[32];
+  unsigned int candidateCount = 0;
 
-  //printf("total players: %i\n", players.size());
-
-  for (unsigned int i = 0; i < players.size(); i++) {
-    if (players.at(i)->IsActive()) {
-      float distance = (players.at(i)->GetPosition() - position).GetLength();
-      if ((!onlyAIControlled) ||
-          ( onlyAIControlled && !team->IsHumanControlled(players.at(i)->GetID()))) {
-        tmpResult.insert(std::pair<float, Player*>(distance, players.at(i)));
+  for (unsigned int i = 0; i < players.size() && candidateCount < 32; i++) {
+    Player *p = players[i];
+    if (p->IsActive()) {
+      if (!onlyAIControlled || !team->IsHumanControlled(p->GetID())) {
+        candidates[candidateCount].distSq = (p->GetPosition() - position).GetSquaredLength();
+        candidates[candidateCount].player = p;
+        candidateCount++;
       }
     }
   }
 
-  //printf("tmp players: %i\n", tmpResult.size());
+  std::stable_sort(candidates, candidates + candidateCount,
+                   [](const DistPlayer &a, const DistPlayer &b) { return a.distSq < b.distSq; });
 
-  std::map<float, Player*>::iterator iter = tmpResult.begin();
-  for (unsigned int i = 0; i < playerCount && iter != tmpResult.end(); i++) {
-    result.push_back(iter->second);
-    iter++;
+  const unsigned int limit = (playerCount < candidateCount) ? playerCount : candidateCount;
+  for (unsigned int i = 0; i < limit; i++) {
+    result.push_back(candidates[i].player);
   }
-
-  //printf("result: %i\n", result.size());
-
 }
 
 Player *AI_GetBestSwitchTargetPlayer(Match *match, Team *team, const Vector3 &desiredMovement) {
@@ -1092,17 +1091,22 @@ Player *AI_GetBestSwitchTargetPlayer(Match *match, Team *team, const Vector3 &de
 }
 
 void AI_GetAutoPass(e_FunctionType passType, const Vector3 &vector, Vector3 &resultingDirection, float &resultingPower) {
-  float heightOffset = 0.11f;
-  float powerFactor = 1.8f;//1.6f
-  float distanceExp = 1.4f;
-  if (passType == e_FunctionType_HighPass) {
-    heightOffset = 0.45f - NormalizedClamp(vector.GetLength(), 0.0f, 60.0f) * 0.15f;// 0.37f;
-    powerFactor = 1.15f;//1.75
-    distanceExp = 1.4f;//1.6
+  float dist = vector.GetLength();
+  float heightOffset = 0.085f;
+  float powerFactor = 1.76f;
+  float distanceExp = 1.38f;
+  if (passType == e_FunctionType_LongPass) {
+    heightOffset = 0.095f;
+    powerFactor = 1.72f;
+    distanceExp = 1.38f;
+  } else if (passType == e_FunctionType_HighPass) {
+    heightOffset = 0.43f - NormalizedClamp(dist, 0.0f, 60.0f) * 0.14f;
+    powerFactor = 1.18f;
+    distanceExp = 1.38f;
   }
   resultingDirection = (vector.GetNormalized(0) + Vector3(0, 0, heightOffset)).GetNormalized(0);
   resultingPower =
-      std::pow(NormalizedClamp(vector.GetLength(), 0.0f, 60.0f), distanceExp) *
+      std::pow(NormalizedClamp(dist, 0.0f, 60.0f), distanceExp) *
       powerFactor;
 }
 

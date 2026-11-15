@@ -9,24 +9,26 @@
 
 namespace blunted {
 
+  void IUserTaskMessage::OnHandled() {
+    Scheduler *sched = GetScheduler();
+    {
+      std::lock_guard<std::mutex> lock(sched->somethingIsDoneMutex);
+    }
+    sched->somethingIsDone.notify_one();
+  }
+
   bool UserTaskMessage_GetPhase::Execute(void *caller) {
     task->GetPhase();
-    boost::mutex::scoped_lock lock(GetScheduler()->somethingIsDoneMutex);
-    GetScheduler()->somethingIsDone.notify_one();
     return true;
   }
 
   bool UserTaskMessage_ProcessPhase::Execute(void *caller) {
     task->ProcessPhase();
-    boost::mutex::scoped_lock lock(GetScheduler()->somethingIsDoneMutex);
-    GetScheduler()->somethingIsDone.notify_one();
     return true;
   }
 
   bool UserTaskMessage_PutPhase::Execute(void *caller) {
     task->PutPhase();
-    boost::mutex::scoped_lock lock(GetScheduler()->somethingIsDoneMutex);
-    GetScheduler()->somethingIsDone.notify_one();
     return true;
   }
 

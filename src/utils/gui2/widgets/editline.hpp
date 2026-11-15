@@ -17,7 +17,7 @@ namespace blunted {
       Gui2EditLine(Gui2WindowManager *windowManager, const std::string &name, float x_percent, float y_percent, float width_percent, float height_percent, const std::string &defaultText);
       virtual ~Gui2EditLine();
 
-      virtual void GetImages(std::vector < boost::intrusive_ptr<Image2D> > &target);
+      virtual void GetImages(std::vector < blunted::intrusive_ptr<Image2D> > &target);
 
       void SetColor(const Vector3 &color);
       void SetOutlineColor(const Vector3 &outlineColor);
@@ -32,10 +32,10 @@ namespace blunted {
       virtual void OnLoseFocus();
       virtual void ProcessKeyboardEvent(KeyboardEvent *event);
 
-      boost::signals2::signal<void(Gui2EditLine*)> sig_OnEnter;
-      boost::signals2::signal<void(Gui2EditLine*)> sig_OnGainFocus;
-      boost::signals2::signal<void(Gui2EditLine*)> sig_OnLoseFocus;
-      boost::signals2::signal<void(Gui2EditLine*)> sig_OnChange;
+      blunted::Signal<void(Gui2EditLine*)> sig_OnEnter;
+      blunted::Signal<void(Gui2EditLine*)> sig_OnGainFocus;
+      blunted::Signal<void(Gui2EditLine*)> sig_OnLoseFocus;
+      blunted::Signal<void(Gui2EditLine*)> sig_OnChange;
 
     protected:
       Gui2Caption *caption;

@@ -21,7 +21,7 @@ namespace blunted {
       PhysicsJoint(PhysicsScene *physicsScene);
       virtual ~PhysicsJoint();
 
-      virtual boost::intrusive_ptr<Interpreter> GetInterpreter(e_ObjectType objectType);
+      virtual blunted::intrusive_ptr<Interpreter> GetInterpreter(e_ObjectType objectType);
 
       virtual void SetPosition(const Vector3 &newPosition);
       Vector3 GetPosition() const;
@@ -44,9 +44,9 @@ namespace blunted {
 
       virtual e_SystemType GetSystemType() const { return e_SystemType_Physics; }
 
-      virtual void OnLoad(boost::intrusive_ptr<Joint> joint, boost::intrusive_ptr<Geometry> object1, boost::intrusive_ptr<Geometry> object2, const Vector3 &anchor, const Vector3 &axis1, const Vector3 &axis2);
+      virtual void OnLoad(blunted::intrusive_ptr<Joint> joint, blunted::intrusive_ptr<Geometry> object1, blunted::intrusive_ptr<Geometry> object2, const Vector3 &anchor, const Vector3 &axis1, const Vector3 &axis2);
       virtual void OnUnload();
-      //virtual void OnChange(boost::shared_ptr < Resource<TriangleMesh> > surface);
+      //virtual void OnChange(std::shared_ptr < Resource<TriangleMesh> > surface);
       //inline virtual void OnMove(const Vector3 &position);
       //inline virtual void OnRotate(const Quaternion &rotation);
 

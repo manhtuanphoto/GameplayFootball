@@ -1,6 +1,5 @@
 // written by bastiaan konings schuiling 2008 - 2015
-// this work is public domain. the code is undocumented, scruffy, untested, and should generally not be used for anything important.
-// i do not offer support, so don't ask. to be used for inspiration :)
+// Broadcast HUD Scoreboard & Match Clock (PES / eFootball style)
 
 #ifndef _HPP_GUI2_VIEW_SCOREBOARD
 #define _HPP_GUI2_VIEW_SCOREBOARD
@@ -21,7 +20,7 @@ class Gui2ScoreBoard : public Gui2View {
     Gui2ScoreBoard(Gui2WindowManager *windowManager, Match *match);
     virtual ~Gui2ScoreBoard();
 
-    void GetImages(std::vector < boost::intrusive_ptr<Image2D> > &target);
+    void GetImages(std::vector < blunted::intrusive_ptr<Image2D> > &target);
 
     virtual void Redraw();
 
@@ -29,23 +28,25 @@ class Gui2ScoreBoard : public Gui2View {
     void SetGoalCount(int teamID, int goalCount);
 
   protected:
-    boost::intrusive_ptr<Image2D> image;
-
-    int w, h;
-    float content_yOffset;
+    void DrawBroadcastBackground();
+    void UpdateScoreCaptionLayout();
+    void UpdateTimeCaptionLayout();
 
     Match *match;
 
     std::string timeStr;
     int goalCount[2];
 
-    Gui2Caption *timeCaption;
+    float team1CellCenterPct;
+    float scoreCellCenterPct;
+    float team2CellCenterPct;
+    float clockCellCenterPct;
+    float textTopPct;
+
+    Gui2Image *bg;
     Gui2Caption *teamNameCaption[2];
-    Gui2Caption *goalCountCaption[2];
-
-    Gui2Image *leagueLogo;
-    Gui2Image *teamLogo[2];
-
+    Gui2Caption *scoreCaption;
+    Gui2Caption *timeCaption;
     Gui2Image *tvLogo;
 };
 

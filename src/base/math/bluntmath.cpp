@@ -5,24 +5,19 @@
 #include "bluntmath.hpp"
 
 #include <cmath>
-
-#include <boost/random.hpp>
-
-#include <boost/thread/mutex.hpp>
+#include <ctime>
+#include <mutex>
+#include <random>
 
 namespace blunted {
 
   unsigned int fastrandseed;
   unsigned int max_uint;
 
-  boost::mutex randMutex;
+  std::mutex randMutex;
 
-  typedef boost::mt19937 BaseGenerator;
-  typedef boost::uniform_real<float> Distribution;
-  typedef boost::variate_generator<BaseGenerator, Distribution> Generator;
-  BaseGenerator base;
-  Distribution dist;
-  Generator rng(base, dist);
+  std::mt19937 baseGenerator;
+  std::uniform_real_distribution<float> uniformDist(0.0f, 1.0f);
 
   real clamp(const real value, const real min, const real max) {
     assert(max >= min);
@@ -39,7 +34,7 @@ namespace blunted {
   }
 
   real invsqrt(real fvalue) {
-    return 1. / sqrt(fvalue);
+    return 1.0f / std::sqrt(fvalue);
   }
 
   float dot_product(real v1[3], real v2[3]) {
@@ -47,7 +42,7 @@ namespace blunted {
   }
 
   void normalize(real v[3]) {
-    real f = 1.0f / sqrt(dot_product(v, v));
+    real f = 1.0f / std::sqrt(dot_product(v, v));
 
     v[0] *= f;
     v[1] *= f;
@@ -67,20 +62,19 @@ namespace blunted {
   }
 
   void randomseed() {
-    rng.engine().seed(static_cast<unsigned int>(std::time(0)));
+    std::lock_guard<std::mutex> lock(randMutex);
+    baseGenerator.seed(static_cast<unsigned int>(std::time(nullptr)));
   }
 
   inline real boostrandom() {
-    return rng();
+    return uniformDist(baseGenerator);
   }
 
   real random(real min, real max) {
     float stretch = max - min;
 
-    randMutex.lock();
-    real value = min + (boostrandom() * stretch);
-    randMutex.unlock();
-    return value;
+    std::lock_guard<std::mutex> lock(randMutex);
+    return min + (boostrandom() * stretch);
   }
 
   int pot(int x) {

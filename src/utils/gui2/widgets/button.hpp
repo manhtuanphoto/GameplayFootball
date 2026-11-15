@@ -23,7 +23,7 @@ namespace blunted {
       Gui2Button(Gui2WindowManager *windowManager, const std::string &name, float x_percent, float y_percent, float width_percent, float height_percent, const std::string &caption);
       virtual ~Gui2Button();
 
-      virtual void GetImages(std::vector < boost::intrusive_ptr<Image2D> > &target);
+      virtual void GetImages(std::vector < blunted::intrusive_ptr<Image2D> > &target);
       virtual Gui2Caption *GetCaptionWidget() { return captionView; }
       virtual std::string GetCaption() { return captionView->GetCaption(); }
       virtual void SetCaption(const std::string &caption) { captionView->SetCaption(caption); }
@@ -43,14 +43,14 @@ namespace blunted {
       virtual void OnGainFocus();
       virtual void OnLoseFocus();
 
-      boost::signals2::signal<void(Gui2Button*)> sig_OnClick;
-      boost::signals2::signal<void(Gui2Button*)> sig_OnGainFocus;
-      boost::signals2::signal<void(Gui2Button*)> sig_OnLoseFocus;
+      blunted::Signal<void(Gui2Button*)> sig_OnClick;
+      blunted::Signal<void(Gui2Button*)> sig_OnGainFocus;
+      blunted::Signal<void(Gui2Button*)> sig_OnLoseFocus;
 
     protected:
       Gui2Caption *captionView;
 
-      boost::intrusive_ptr<Image2D> image;
+      blunted::intrusive_ptr<Image2D> image;
 
       int fadeOut_ms;
       int fadeOutTime_ms;

@@ -19,17 +19,17 @@ class PlayerData {
     PlayerData();
     virtual ~PlayerData();
 
-    std::string GetFirstName() const { return firstName; }
-    std::string GetLastName() const { return lastName; }
+    const std::string &GetFirstName() const { return firstName; }
+    const std::string &GetLastName() const { return lastName; }
     int GetDatabaseID() const { return databaseID; }
     const std::vector<e_PlayerRole> &GetRoles() const;
 
     float GetStat(const char *name);
 
-    int GetSkinColor() { return skinColor; }
-    std::string GetHairStyle() { return hairStyle; }
-    std::string GetHairColor() { return hairColor; }
-    float GetHeight() { return height; }
+    int GetSkinColor() const { return skinColor; }
+    const std::string &GetHairStyle() const { return hairStyle; }
+    const std::string &GetHairColor() const { return hairColor; }
+    float GetHeight() const { return height; }
 
   protected:
     int databaseID;

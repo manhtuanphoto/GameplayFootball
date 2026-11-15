@@ -19,7 +19,7 @@ namespace blunted {
       GraphicsObject(GraphicsScene *graphicsScene);
       virtual ~GraphicsObject();
 
-      virtual boost::intrusive_ptr<Interpreter> GetInterpreter(e_ObjectType objectType) = 0;
+      virtual blunted::intrusive_ptr<Interpreter> GetInterpreter(e_ObjectType objectType) = 0;
 
       GraphicsScene *GetGraphicsScene();
 

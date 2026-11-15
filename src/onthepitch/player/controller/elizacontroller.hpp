@@ -66,6 +66,7 @@ class ElizaController : public PlayerController {
 
     Vector3 lastDesiredDirection;
     float lastDesiredVelocity;
+    bool pendingTakeOnKnockOn;
 
 };
 

@@ -15,6 +15,7 @@
 #include "utils/gui2/widgets/grid.hpp"
 #include "utils/gui2/widgets/caption.hpp"
 #include "utils/gui2/widgets/capturekey.hpp"
+#include "utils/gui2/widgets/pulldown.hpp"
 
 #include "../hid/ihidevice.hpp"
 #include "SDL2/SDL_keycode.h"
@@ -203,13 +204,21 @@ class GraphicsPage : public Gui2Page {
     virtual ~GraphicsPage();
 
   protected:
-    void SetResolution(int resIndex);
+    void OnChangeResolution(Gui2Pulldown *pulldown);
+    void ToggleFullscreen();
+    void ToggleVSync();
+    void CycleAntiAliasing();
+    void RefreshOptionButtons();
 
     std::vector<Resolution> resolutions;
+    int desktopWidth;
+    int desktopHeight;
 
-    Gui2Image *bg;
-    Gui2Caption *restartCaption1, *restartCaption2, *restartCaption3;
-    Gui2CaptureKey *captureKey;
+    Gui2Pulldown *pulldownResolution;
+    Gui2Button *buttonFullscreen;
+    Gui2Button *buttonVSync;
+    Gui2Button *buttonAntiAliasing;
+    Gui2Caption *statusCaption;
 };
 
 class AudioPage : public Gui2Page {

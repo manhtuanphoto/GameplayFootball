@@ -3,12 +3,9 @@
 // i do not offer support, so don't ask. to be used for inspiration :)
 
 #include "filebrowser.hpp"
+#include <filesystem>
 
-#define BOOST_FILESYSTEM_NO_DEPRECATED
-#define BOOST_FILESYSTEM_VERSION 3
-#include "boost/filesystem.hpp"
-
-namespace fs = boost::filesystem;
+namespace fs = std::filesystem;
 
 namespace blunted {
 
@@ -57,7 +54,7 @@ namespace blunted {
       if (dirContents.at(i).type == e_DirEntryType_File) color = Vector3(240, 140, 60);
                                                     else color = Vector3(80, 140, 255);
       Gui2Button *button = new Gui2Button(windowManager, this->GetName() + "_" + dirContents.at(i).name, 0, 0, width_percent - 1, 3, dirContents.at(i).name);
-      button->sig_OnClick.connect(boost::bind(&Gui2FileBrowser::OnClick, this));
+      button->sig_OnClick.connect(blunted::Bind(&Gui2FileBrowser::OnClick, this));
       button->SetColor(color);
       grid->AddView(button, i, 0);
       dirContents.at(i).button = button;
@@ -82,18 +79,18 @@ namespace blunted {
       dirContents.push_back(entry);
     }
 
-    fs::path path = fs::system_complete(fs::path(directory.c_str()));
-    if (!fs::exists(path) || !fs::is_directory(path)) Log(e_Error, "GuiFileBrowser", "GetDirectoryContents", "Could not open directory " + directory + " for reading");
+    std::error_code ec;
+    fs::path path = fs::absolute(fs::path(directory.c_str()), ec);
+    if (!fs::exists(path, ec) || !fs::is_directory(path, ec)) {
+      Log(e_Error, "GuiFileBrowser", "GetDirectoryContents", "Could not open directory " + directory + " for reading");
+      return;
+    }
 
-    fs::directory_iterator dirIter(path);
-    fs::directory_iterator endIter;
-    while (dirIter != endIter) {
+    for (const auto &dirEntry : fs::directory_iterator(path, ec)) {
       DirEntry entry;
-      entry.name = dirIter->path().filename().string(); // used to be .native() .. todo, check out why
-      entry.type = is_directory(dirIter->status()) ? e_DirEntryType_Directory : e_DirEntryType_File;
+      entry.name = dirEntry.path().filename().string();
+      entry.type = dirEntry.is_directory(ec) ? e_DirEntryType_Directory : e_DirEntryType_File;
       dirContents.push_back(entry);
-
-      dirIter++;
     }
 
     std::sort(dirContents.begin(), dirContents.end(), DirSortFunc);

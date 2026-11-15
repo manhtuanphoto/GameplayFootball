@@ -17,7 +17,7 @@ namespace blunted {
       Gui2Image(Gui2WindowManager *windowManager, const std::string &name, float x_percent, float y_percent, float width_percent, float height_percent);
       virtual ~Gui2Image();
 
-      virtual void GetImages(std::vector < boost::intrusive_ptr<Image2D> > &target);
+      virtual void GetImages(std::vector < blunted::intrusive_ptr<Image2D> > &target);
 
       void LoadImage(const std::string &filename);
       virtual void Redraw();
@@ -25,11 +25,11 @@ namespace blunted {
       virtual void SetSize(float new_width_percent, float new_height_percent);
       virtual void SetZoom(float zoomx, float zoomy);
 
-      boost::intrusive_ptr<Image2D> &GetImage2D() { return image; }
+      blunted::intrusive_ptr<Image2D> &GetImage2D() { return image; }
 
     protected:
-      boost::intrusive_ptr<Image2D> image;
-      boost::intrusive_ptr<Image2D> imageSource;
+      blunted::intrusive_ptr<Image2D> image;
+      blunted::intrusive_ptr<Image2D> imageSource;
 
   };
 

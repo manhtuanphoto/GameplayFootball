@@ -19,7 +19,7 @@ namespace blunted {
       Gui2Caption(Gui2WindowManager *windowManager, const std::string &name, float x_percent, float y_percent, float width_percent, float height_percent, const std::string &caption);
       virtual ~Gui2Caption();
 
-      virtual void GetImages(std::vector < boost::intrusive_ptr<Image2D> > &target);
+      virtual void GetImages(std::vector < blunted::intrusive_ptr<Image2D> > &target);
 
       void SetColor(const Vector3 &color);
       void SetOutlineColor(const Vector3 &outlineColor);
@@ -34,7 +34,7 @@ namespace blunted {
       float GetTextWidthPercent(int subStrLength);
 
     protected:
-      boost::intrusive_ptr<Image2D> image;
+      blunted::intrusive_ptr<Image2D> image;
 
       std::string caption;
       Vector3 color;

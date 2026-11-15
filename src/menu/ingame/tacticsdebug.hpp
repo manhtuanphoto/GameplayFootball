@@ -25,7 +25,7 @@ class Gui2TacticsDebug : public Gui2View {
     Gui2TacticsDebug(Gui2WindowManager *windowManager, const std::string &name, float x_percent, float y_percent, float width_percent, float height_percent, Match *match);
     virtual ~Gui2TacticsDebug();
 
-    void GetImages(std::vector < boost::intrusive_ptr<Image2D> > &target);
+    void GetImages(std::vector < blunted::intrusive_ptr<Image2D> > &target);
 
     virtual void Redraw();
 
@@ -33,7 +33,7 @@ class Gui2TacticsDebug : public Gui2View {
     virtual void SetValue(unsigned int entryID, int typeID, int teamID, float value);
 
   protected:
-    boost::intrusive_ptr<Image2D> image;
+    blunted::intrusive_ptr<Image2D> image;
 
     int w, h;
 

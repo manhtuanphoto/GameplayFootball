@@ -16,13 +16,13 @@ namespace blunted {
   PhysicsGeometry::~PhysicsGeometry() {
   }
 
-  boost::intrusive_ptr<Interpreter> PhysicsGeometry::GetInterpreter(e_ObjectType objectType) {
+  blunted::intrusive_ptr<Interpreter> PhysicsGeometry::GetInterpreter(e_ObjectType objectType) {
     if (objectType == e_ObjectType_Geometry) {
-      boost::intrusive_ptr<PhysicsGeometry_GeometryInterpreter> geometryInterpreter(new PhysicsGeometry_GeometryInterpreter(this));
+      blunted::intrusive_ptr<PhysicsGeometry_GeometryInterpreter> geometryInterpreter(new PhysicsGeometry_GeometryInterpreter(this));
       return geometryInterpreter;
     }
     Log(e_FatalError, "PhysicsGeometry", "GetInterpreter", "No appropriate interpreter found for this ObjectType");
-    return boost::intrusive_ptr<PhysicsGeometry_GeometryInterpreter>();
+    return blunted::intrusive_ptr<PhysicsGeometry_GeometryInterpreter>();
   }
 
   void PhysicsGeometry::SetPosition(const Vector3 &newPosition) {
@@ -47,8 +47,8 @@ namespace blunted {
   PhysicsGeometry_GeometryInterpreter::PhysicsGeometry_GeometryInterpreter(PhysicsGeometry *caller) : caller(caller) {
   }
 
-  void PhysicsGeometry_GeometryInterpreter::OnLoad(boost::intrusive_ptr<Geometry> geometry) {
-    boost::intrusive_ptr < Resource<GeometryData> > resource = geometry->GetGeometryData();
+  void PhysicsGeometry_GeometryInterpreter::OnLoad(blunted::intrusive_ptr<Geometry> geometry) {
+    blunted::intrusive_ptr < Resource<GeometryData> > resource = geometry->GetGeometryData();
 
     IPhysicsWrapper *physics = caller->GetPhysicsScene()->GetPhysicsSystem()->GetPhysicsWrapper();
 

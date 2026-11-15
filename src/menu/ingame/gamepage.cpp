@@ -13,18 +13,100 @@
 #include "gameover.hpp"
 
 #include "../../onthepitch/match.hpp"
+#include "../../hid/keyboard.hpp"
+#include "systems/graphics/rendering/r3d_messages.hpp"
 
 using namespace blunted;
 
-GamePage::GamePage(Gui2WindowManager *windowManager, const Gui2PageData &pageData) : Gui2Page(windowManager, pageData), match(0) {
+std::string GamePage::BuildTestKeysCaptionText() const {
+  int aa = clamp(GetConfiguration()->GetInt("context_aa", (int)e_AntiAliasing_FXAA_Quality), 0, 3);
+  const char *aaShort = "FXAA+";
+  if (aa == 0) aaShort = "OFF";
+  else if (aa == 1) aaShort = "Fast";
+  else if (aa == 3) aaShort = "Ultra";
+  return "[F1-F6] Sun/Cam/Ball/Mode/" + f5ModeLabel + "/IK | [F7] Mental | [F10] AA:" + aaShort + " | [F9] Hide";
+}
 
-  Gui2Caption *betaSign = new Gui2Caption(windowManager, "caption_betasign", 0, 0, 0, 2, "gameplay football public beta 2 v0.2");
-  betaSign->SetColor(Vector3(180, 180, 180));
-  betaSign->SetTransparency(0.3f);
-  this->AddView(betaSign);
-  float w = betaSign->GetTextWidthPercent();
-  betaSign->SetPosition(50 - w * 0.5f, 97.0f);
-  betaSign->Show();
+GamePage::GamePage(Gui2WindowManager *windowManager, const Gui2PageData &pageData) : Gui2Page(windowManager, pageData), match(0), hotkeyBg(0), controlsCaption(0), actionsCaption(0), testKeysCaption(0), showHotkeyBar(true) {
+
+  std::string keySprint = "E";
+  std::string keyDribble = "C";
+  std::string keySpecial = "Z";
+  std::string keyPass = "S";
+  std::string keyThrough = "W";
+  std::string keyHigh = "A";
+  std::string keyShot = "D";
+  std::string keySwitch = "Q";
+
+  const std::vector<IHIDevice*> &controllers = GetControllers();
+  for (unsigned int c = 0; c < controllers.size(); c++) {
+    if (controllers.at(c)->GetDeviceType() == e_HIDeviceType_Keyboard) {
+      HIDKeyboard *kb = static_cast<HIDKeyboard*>(controllers.at(c));
+      keySprint = SDL_GetKeyName(kb->GetFunctionMapping(e_ButtonFunction_Sprint));
+      keyDribble = SDL_GetKeyName(kb->GetFunctionMapping(e_ButtonFunction_Dribble));
+      keySpecial = SDL_GetKeyName(kb->GetFunctionMapping(e_ButtonFunction_Special));
+      keyPass = SDL_GetKeyName(kb->GetFunctionMapping(e_ButtonFunction_ShortPass));
+      keyThrough = SDL_GetKeyName(kb->GetFunctionMapping(e_ButtonFunction_LongPass));
+      keyHigh = SDL_GetKeyName(kb->GetFunctionMapping(e_ButtonFunction_HighPass));
+      keyShot = SDL_GetKeyName(kb->GetFunctionMapping(e_ButtonFunction_Shot));
+      keySwitch = SDL_GetKeyName(kb->GetFunctionMapping(e_ButtonFunction_Switch));
+      break;
+    }
+  }
+
+  bool isFKMode = (GetMenuTask()->GetSpecialMatchMode() == e_SpecialMatchMode_FreeKick);
+  f5ModeLabel = isFKMode ? "NewFK" : "Rst";
+  std::string line1 = "[Arrows] Move  [" + keySprint + "] Sprint  [" + keyDribble + "] Slow  [" + keySpecial + "] Special  [" + keySwitch + "] Switch";
+  std::string line2 = "[" + keyPass + "] Pass/Press  [" + keyThrough + "] Thru/GK  [" + keyHigh + "] Cross/Slide  [" + keyShot + "] Shot/TeamPress";
+  std::string line3 = BuildTestKeysCaptionText();
+
+  const float fontH = 1.62f;
+  const float cardTop = 1.4f;
+  const float cardH = 6.1f;
+
+  // Create captions first to measure exact rendered widths, then size & place the translucent top-bar card
+  controlsCaption = new Gui2Caption(windowManager, "caption_game_controls", 0, cardTop + 0.30f, 60.0f, fontH, line1);
+  controlsCaption->SetColor(Vector3(245, 240, 200));
+  controlsCaption->SetOutlineColor(Vector3(0, 0, 0));
+  controlsCaption->SetTransparency(0.06f);
+
+  actionsCaption = new Gui2Caption(windowManager, "caption_game_actions", 0, cardTop + 2.15f, 60.0f, fontH, line2);
+  actionsCaption->SetColor(Vector3(225, 245, 215));
+  actionsCaption->SetOutlineColor(Vector3(0, 0, 0));
+  actionsCaption->SetTransparency(0.06f);
+
+  testKeysCaption = new Gui2Caption(windowManager, "caption_game_testkeys", 0, cardTop + 4.00f, 64.0f, fontH, line3);
+  testKeysCaption->SetColor(Vector3(155, 215, 255));
+  testKeysCaption->SetOutlineColor(Vector3(0, 0, 0));
+  testKeysCaption->SetTransparency(0.06f);
+
+  float maxTextW = std::max(controlsCaption->GetTextWidthPercent(),
+                            std::max(actionsCaption->GetTextWidthPercent(),
+                                     testKeysCaption->GetTextWidthPercent()));
+  float sbRight = 29.0f;
+  float cardW = clamp(maxTextW + 2.2f, 36.0f, 98.4f - sbRight);
+  float cardX = 98.2f - cardW;
+
+  hotkeyBg = new Gui2Image(windowManager, "image_game_hotkey_bg", cardX, cardTop, cardW, cardH);
+  int px = 0, py = 0, pw = 0, ph = 0;
+  windowManager->GetCoordinates(cardX, cardTop, cardW, cardH, px, py, pw, ph);
+  hotkeyBg->GetImage2D()->DrawRectangle(0, 0, pw, ph, Vector3(10, 16, 28), 140);
+  hotkeyBg->GetImage2D()->DrawRectangle(0, 0, 3, ph, Vector3(95, 200, 255), 215);
+  hotkeyBg->GetImage2D()->OnChange();
+  this->AddView(hotkeyBg);
+  hotkeyBg->Show();
+
+  this->AddView(controlsCaption);
+  controlsCaption->SetPosition(cardX + 1.1f, cardTop + 0.30f);
+  controlsCaption->Show();
+
+  this->AddView(actionsCaption);
+  actionsCaption->SetPosition(cardX + 1.1f, cardTop + 2.15f);
+  actionsCaption->Show();
+
+  this->AddView(testKeysCaption);
+  testKeysCaption->SetPosition(cardX + 1.1f, cardTop + 4.00f);
+  testKeysCaption->Show();
 
   this->Show();
 
@@ -32,25 +114,11 @@ GamePage::GamePage(Gui2WindowManager *windowManager, const Gui2PageData &pageDat
 }
 
 GamePage::~GamePage() {
-
-  // todonow: only when connected in the first place?
-  // problem is, this function may be called outside of gametask's or match's lifetime.
-
-  if (match) {
-    //GetGameTask()->matchLifetimeMutex.lock();
-    //if (GetGameTask()->GetMatch() != 0) {
-
-      if (Verbose()) printf("disconnecting signals\n");
-
-      match->sig_OnMatchPhaseChange.disconnect(boost::bind(&GamePage::GoMatchPhasePage, this));
-      match->sig_OnShortReplayMoment.disconnect(boost::bind(&GamePage::GoShortReplayPage, this));
-      match->sig_OnExtendedReplayMoment.disconnect(boost::bind(&GamePage::GoExtendedReplayPage, this));
-      match->sig_OnGameOver.disconnect(boost::bind(&GamePage::GoGameOverPage, this));
-
-    //}
-    //GetGameTask()->matchLifetimeMutex.unlock();
-  }
-
+  if (Verbose()) printf("disconnecting signals\n");
+  matchPhaseConn.disconnect();
+  shortReplayConn.disconnect();
+  extendedReplayConn.disconnect();
+  gameOverConn.disconnect();
 }
 
 void GamePage::Process() {
@@ -63,10 +131,10 @@ void GamePage::Process() {
 
       if (Verbose()) printf("connecting signals\n");
 
-      match->sig_OnMatchPhaseChange.connect(boost::bind(&GamePage::GoMatchPhasePage, this));
-      match->sig_OnShortReplayMoment.connect(boost::bind(&GamePage::GoShortReplayPage, this));
-      match->sig_OnExtendedReplayMoment.connect(boost::bind(&GamePage::GoExtendedReplayPage, this));
-      match->sig_OnGameOver.connect(boost::bind(&GamePage::GoGameOverPage, this));
+      matchPhaseConn = match->sig_OnMatchPhaseChange.connect(blunted::Bind(&GamePage::GoMatchPhasePage, this));
+      shortReplayConn = match->sig_OnShortReplayMoment.connect(blunted::Bind(&GamePage::GoShortReplayPage, this));
+      extendedReplayConn = match->sig_OnExtendedReplayMoment.connect(blunted::Bind(&GamePage::GoExtendedReplayPage, this));
+      gameOverConn = match->sig_OnGameOver.connect(blunted::Bind(&GamePage::GoGameOverPage, this));
 
     }
     GetGameTask()->matchLifetimeMutex.unlock();
@@ -118,6 +186,37 @@ void GamePage::ProcessWindowingEvent(WindowingEvent *event) {
 
 void GamePage::ProcessKeyboardEvent(KeyboardEvent *event) {
 
+  if (event->GetKeyOnce(SDLK_F10)) {
+    int curAA = clamp(GetConfiguration()->GetInt("context_aa", (int)e_AntiAliasing_FXAA_Quality), 0, 3);
+    int nextAA = (curAA + 1) % 4;
+    GetConfiguration()->Set("context_aa", nextAA);
+    GetConfiguration()->SaveFile(GetConfigFilename());
+
+    blunted::intrusive_ptr<Renderer3DMessage_SetAntiAliasing> setAA(new Renderer3DMessage_SetAntiAliasing((e_AntiAliasingMode)nextAA));
+    GetGraphicsSystem()->GetRenderer3D()->messageQueue.PushMessage(setAA);
+
+    if (testKeysCaption) {
+      testKeysCaption->SetCaption(BuildTestKeysCaptionText());
+    }
+    return;
+  }
+
+  if (event->GetKeyOnce(SDLK_F9)) {
+    showHotkeyBar = !showHotkeyBar;
+    if (showHotkeyBar) {
+      if (hotkeyBg) hotkeyBg->Show();
+      if (controlsCaption) controlsCaption->Show();
+      if (actionsCaption) actionsCaption->Show();
+      if (testKeysCaption) testKeysCaption->Show();
+    } else {
+      if (hotkeyBg) hotkeyBg->Hide();
+      if (controlsCaption) controlsCaption->Hide();
+      if (actionsCaption) actionsCaption->Hide();
+      if (testKeysCaption) testKeysCaption->Hide();
+    }
+    return;
+  }
+
   if (event->GetKeyOnce(SDLK_ESCAPE)) {
 
     // check which team the keyboard belongs to
@@ -136,7 +235,7 @@ void GamePage::ProcessKeyboardEvent(KeyboardEvent *event) {
     const std::vector<SideSelection> sides = GetMenuTask()->GetControllerSetup();
     for (unsigned int s = 0; s < sides.size(); s++) {
       if (sides.at(s).controllerID == (signed int)controllerID) {
-        teamID = int(round(sides.at(s).side * 0.5 + 0.5));
+        teamID = (sides.at(s).side > 0) ? 1 : 0;
         break;
       }
     }
@@ -174,7 +273,7 @@ void GamePage::ProcessJoystickEvent(JoystickEvent *event) {
         const std::vector<SideSelection> sides = GetMenuTask()->GetControllerSetup();
         for (unsigned int s = 0; s < sides.size(); s++) {
           if (sides.at(s).controllerID == (signed int)c) {
-            teamID = int(round(sides.at(s).side * 0.5 + 0.5));
+            teamID = (sides.at(s).side > 0) ? 1 : 0;
             break;
           }
         }

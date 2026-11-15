@@ -18,6 +18,8 @@
 
 #include "../onthepitch/match.hpp"
 
+#include <SDL2/SDL_image.h>
+
 using namespace blunted;
 
 
@@ -72,11 +74,10 @@ class IntroPage : public Gui2Page {
     IntroPage(Gui2WindowManager *windowManager, const Gui2PageData &pageData);
     virtual ~IntroPage();
 
-    virtual void ProcessWindowingEvent(WindowingEvent *event);
-    virtual void ProcessKeyboardEvent(KeyboardEvent *event);
+    virtual void Process();
 
   protected:
-    Gui2Image *bg;
+    bool transitioned;
 
 };
 
@@ -101,6 +102,8 @@ class MainMenuPage : public Gui2Page {
     virtual ~MainMenuPage();
 
     void GoControllerSelect();
+    void GoSandbox();
+    void GoFreeKick();
     void GoLeague();
     void GoSettings();
     void GoCredits();

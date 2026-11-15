@@ -5,6 +5,11 @@
 #ifndef _HPP_RENDERER3D
 #define _HPP_RENDERER3D
 
+#include <array>
+#include <memory>
+#include <unordered_map>
+#include <vector>
+
 #include "types/thread.hpp"
 #include "types/resource.hpp"
 
@@ -24,16 +29,16 @@ namespace blunted {
   class Texture;
 
   struct Overlay2DQueueEntry {
-    boost::intrusive_ptr < Resource<Texture> > texture;
+    blunted::intrusive_ptr < Resource<Texture> > texture;
     int position[2];
     int size[2];
   };
 
   struct Renderer3DMaterial {
-    boost::intrusive_ptr < Resource<Texture> > diffuseTexture;
-    boost::intrusive_ptr < Resource<Texture> > normalTexture;
-    boost::intrusive_ptr < Resource<Texture> > specularTexture;
-    boost::intrusive_ptr < Resource<Texture> > illuminationTexture;
+    blunted::intrusive_ptr < Resource<Texture> > diffuseTexture;
+    blunted::intrusive_ptr < Resource<Texture> > normalTexture;
+    blunted::intrusive_ptr < Resource<Texture> > specularTexture;
+    blunted::intrusive_ptr < Resource<Texture> > illuminationTexture;
     float shininess;
     float specular_amount;
     Vector3 self_illumination;
@@ -46,12 +51,16 @@ namespace blunted {
   };
 
   struct VertexBufferQueueEntry {
-    std::deque<VertexBufferIndex> vertexBufferIndices;
-    boost::intrusive_ptr < Resource<VertexBuffer> > vertexBuffer;
+    VertexBufferQueueEntry() : vaoIDCache(0), firstTexIDCache(0), hasSkinning(false) {}
+    std::shared_ptr<const std::vector<VertexBufferIndex>> vertexBufferIndices;
+    blunted::intrusive_ptr < Resource<VertexBuffer> > vertexBuffer;
     AABB aabb;
     Vector3 position;
     Quaternion rotation;
-    // todo: think about this: int id_cache; // for quick access - getting resource's id needs mutexing and all
+    int vaoIDCache;
+    int firstTexIDCache;
+    bool hasSkinning;
+    std::shared_ptr<const std::array<float, 256>> boneMatrices;
   };
 
   struct ShadowMap {
@@ -59,7 +68,7 @@ namespace blunted {
     Matrix4 lightProjectionMatrix;
     Matrix4 lightViewMatrix;
     std::deque < VertexBufferQueueEntry > visibleGeometry;
-    boost::intrusive_ptr < Resource<Texture> > texture;
+    blunted::intrusive_ptr < Resource<Texture> > texture;
     int frameBufferID;
   };
 
@@ -68,27 +77,40 @@ namespace blunted {
     e_ViewRenderTarget_Context
   };
 
+  enum e_AntiAliasingMode {
+    e_AntiAliasing_Off = 0,
+    e_AntiAliasing_FXAA_Fast = 1,
+    e_AntiAliasing_FXAA_Quality = 2,
+    e_AntiAliasing_Ultra_SSAA = 3
+  };
+
   struct View {
-    e_ViewRenderTarget target;
-    int targetTexID;
-    int x, y, width, height;
+    bool active = false;
+    e_ViewRenderTarget target = e_ViewRenderTarget_Context;
+    int targetTexID = 0;
+    float x_percent = 0.0f, y_percent = 0.0f, width_percent = 100.0f, height_percent = 100.0f;
+    int x = 0, y = 0, baseWidth = 0, baseHeight = 0;
+    int width = 0, height = 0;
 
-    int gBufferID;
-    int gBuffer_DepthTexID;
-    int gBuffer_AlbedoTexID;
-    int gBuffer_NormalTexID;
-    int gBuffer_AuxTexID;
+    int gBufferID = 0;
+    int gBuffer_DepthTexID = 0;
+    int gBuffer_AlbedoTexID = 0;
+    int gBuffer_NormalTexID = 0;
+    int gBuffer_AuxTexID = 0;
 
-    int accumBufferID;
-    int accumBuffer_AccumTexID;
-    int accumBuffer_ModifierTexID;
+    int accumBufferID = 0;
+    int accumBuffer_AccumTexID = 0;
+    int accumBuffer_ModifierTexID = 0;
+
+    int postProcessBufferID = 0;
+    int postProcessTexID = 0;
   };
 
   struct LightQueueEntry {
     bool hasShadow;
     Matrix4 lightProjectionMatrix;
     Matrix4 lightViewMatrix;
-    boost::intrusive_ptr < Resource<Texture> > shadowMapTexture;
+    blunted::intrusive_ptr < Resource<Texture> > shadowMapTexture;
     Vector3 position;
     int type; // 0 == directional, 1 == point
     Vector3 color;
@@ -148,6 +170,8 @@ namespace blunted {
 
   enum e_PixelFormat {
     e_PixelFormat_Alpha,
+    e_PixelFormat_Red,
+    e_PixelFormat_RG,
     e_PixelFormat_RGB,
     e_PixelFormat_RGBA,
     e_PixelFormat_DepthComponent,
@@ -155,6 +179,8 @@ namespace blunted {
   };
 
   enum e_InternalPixelFormat {
+    e_InternalPixelFormat_R8,
+    e_InternalPixelFormat_RG16F,
 //    e_InternalPixelFormat_RGB,
     e_InternalPixelFormat_RGB8,
     e_InternalPixelFormat_SRGB8,
@@ -196,9 +222,27 @@ namespace blunted {
 
   struct Shader {
     std::string name;
-    unsigned int programID;
-    unsigned int vertexShaderID;
-    unsigned int fragmentShaderID;
+    unsigned int programID = 0;
+    unsigned int vertexShaderID = 0;
+    unsigned int fragmentShaderID = 0;
+    int loc_projectionMatrix = -1;
+    int loc_viewMatrix = -1;
+    int loc_modelMatrix = -1;
+    int loc_orthoProjectionMatrix = -1;
+    int loc_orthoViewMatrix = -1;
+    int loc_projection = -1;
+    int loc_model = -1;
+    int loc_hasSkinning = -1;
+    int loc_boneMatrices = -1;
+    int loc_materialParams = -1;
+    int loc_materialBools = -1;
+    int loc_cameraPosition = -1;
+    int loc_hasShadow = -1;
+    int loc_lightViewProjectionMatrix = -1;
+    int loc_lightColor = -1;
+    int loc_lightRadius = -1;
+    int loc_lightPosition = -1;
+    std::unordered_map<std::string, int> uniformLocations;
   };
 
   class Renderer3D : public Thread {
@@ -242,7 +286,7 @@ namespace blunted {
       virtual Matrix4 CreateOrthoMatrix(float left, float right, float bottom, float top, float nearCap = -1, float farCap = -1) = 0;
 
       // vertex buffers
-      virtual VertexBufferID CreateVertexBuffer(float *vertices, unsigned int verticesDataSize, std::vector<unsigned int> indices, e_VertexBufferUsage usage) = 0;
+      virtual VertexBufferID CreateVertexBuffer(float *vertices, unsigned int verticesDataSize, std::vector<unsigned int> indices, e_VertexBufferUsage usage, const std::vector<float> &skinData = std::vector<float>()) = 0;
       virtual void UpdateVertexBuffer(VertexBufferID vertexBufferID, float *vertices, unsigned int verticesDataSize) = 0;
       virtual void DeleteVertexBuffer(VertexBufferID vertexBufferID) = 0;
       virtual void RenderVertexBuffer(const std::deque<VertexBufferQueueEntry> &vertexBufferQueue, e_RenderMode renderMode = e_RenderMode_Full) = 0;
@@ -278,7 +322,7 @@ namespace blunted {
       virtual void SetRenderBufferStorage(e_InternalPixelFormat internalPixelFormat, int width, int height) = 0;
 
       // render targets
-      virtual void SetRenderTargets(std::vector<e_TargetAttachment> targetAttachments) = 0;
+      virtual void SetRenderTargets(const std::vector<e_TargetAttachment> &targetAttachments) = 0;
 
       // utility
       virtual void SetFOV(float angle) = 0;
@@ -286,6 +330,16 @@ namespace blunted {
       virtual void PopAttribute() = 0;
       virtual void SetViewport(int x, int y, int width, int height) = 0;
       virtual void GetContextSize(int &width, int &height, int &bpp) = 0;
+      virtual void GetDrawableSize(int &width, int &height) {
+        int bpp = 32;
+        GetContextSize(width, height, bpp);
+      }
+      virtual void SetWindowMode(int width, int height, bool fullscreen) {}
+      virtual bool IsFullscreen() const { return false; }
+      virtual void SetVSync(bool enabled) {}
+      virtual bool GetVSync() const { return true; }
+      virtual void SetAntiAliasingMode(e_AntiAliasingMode mode) {}
+      virtual e_AntiAliasingMode GetAntiAliasingMode() const { return e_AntiAliasing_FXAA_Quality; }
       virtual void SetPolygonOffset(float scale, float bias) = 0;
 
       // shaders
@@ -297,9 +351,14 @@ namespace blunted {
       virtual void SetUniformFloat3(const std::string &shaderName, const std::string &varName, float value1, float value2, float value3) = 0;
       virtual void SetUniformFloat3Array(const std::string &shaderName, const std::string &varName, int count, float *values) = 0;
       virtual void SetUniformMatrix4(const std::string &shaderName, const std::string &varName, const Matrix4 &mat) = 0;
+      virtual void SetUniformMatrix4Array(const std::string &shaderName, const std::string &varName, int count, const float *values) {}
 
       virtual void HDRCaptureOverallBrightness() = 0;
       virtual float HDRGetOverallBrightness() = 0;
+
+      virtual void InitMainThread() {}
+      virtual void RunMainLoop() {}
+      virtual void ShutdownMainThread() {}
 
       void operator()() = 0;
 

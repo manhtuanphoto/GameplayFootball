@@ -24,9 +24,9 @@ namespace blunted {
 
       virtual AudioSystem *GetAudioSystem();
 
-      virtual ISystemObject *CreateSystemObject(boost::intrusive_ptr<Object> object);
+      virtual ISystemObject *CreateSystemObject(blunted::intrusive_ptr<Object> object);
 
-      virtual boost::intrusive_ptr<ISceneInterpreter> GetInterpreter(e_SceneType sceneType);
+      virtual blunted::intrusive_ptr<ISceneInterpreter> GetInterpreter(e_SceneType sceneType);
 
     protected:
       AudioSystem *audioSystem;
@@ -47,7 +47,7 @@ namespace blunted {
       virtual void SetErrorCorrection(float value) {}
       virtual void SetConstraintForceMixing(float value) {}
 
-      virtual ISystemObject *CreateSystemObject(boost::intrusive_ptr<Object> object);
+      virtual ISystemObject *CreateSystemObject(blunted::intrusive_ptr<Object> object);
 
     protected:
       AudioScene *caller;
@@ -63,7 +63,7 @@ namespace blunted {
       virtual void OnLoad();
       virtual void OnUnload();
 
-      virtual ISystemObject *CreateSystemObject(boost::intrusive_ptr<Object> object);
+      virtual ISystemObject *CreateSystemObject(blunted::intrusive_ptr<Object> object);
 
     protected:
       AudioScene *caller;

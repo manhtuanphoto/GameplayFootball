@@ -22,7 +22,7 @@ namespace blunted {
   class ISkyboxInterpreter : public IGeometryInterpreter {
 
     public:
-      virtual void OnLoad(boost::intrusive_ptr<Skybox> geom) = 0;
+      virtual void OnLoad(blunted::intrusive_ptr<Skybox> geom) = 0;
       virtual void OnUnload() = 0;
       virtual void OnMove(const Vector3 &position) = 0;
       virtual void OnRotate(const Quaternion &rotation) = 0;

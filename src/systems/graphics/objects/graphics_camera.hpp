@@ -23,7 +23,7 @@ namespace blunted {
       GraphicsCamera(GraphicsScene *graphicsScene);
       virtual ~GraphicsCamera();
 
-      virtual boost::intrusive_ptr<Interpreter> GetInterpreter(e_ObjectType objectType);
+      virtual blunted::intrusive_ptr<Interpreter> GetInterpreter(e_ObjectType objectType);
 
       virtual void SetPosition(const Vector3 &newPosition);
       Vector3 GetPosition() const;
@@ -56,7 +56,7 @@ namespace blunted {
       virtual void SetFOV(float fov);
       virtual void SetCapping(float nearCap, float farCap);
       virtual void OnSpatialChange(const Vector3 &position, const Quaternion &rotation);
-      virtual void EnqueueView(const std::string &camName, std::deque < boost::intrusive_ptr<Geometry> > &visibleGeometry, std::deque < boost::intrusive_ptr<Light> > &visibleLights, std::deque < boost::intrusive_ptr<Skybox> > &skyboxes);
+      virtual void EnqueueView(const std::string &camName, std::deque < blunted::intrusive_ptr<Geometry> > &visibleGeometry, std::deque < blunted::intrusive_ptr<Light> > &visibleLights, std::deque < blunted::intrusive_ptr<Skybox> > &skyboxes);
       virtual void OnPoke();
 
     protected:

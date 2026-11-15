@@ -36,6 +36,7 @@ class MentalImage {
     Match *match;
 
     std::vector<PlayerImage> players;
+    std::vector<Player*> allPlayersScratch;
     Vector3 ballPredictions[ballPredictionSize_ms / 10];
 
     unsigned int timeStampNeg_ms;

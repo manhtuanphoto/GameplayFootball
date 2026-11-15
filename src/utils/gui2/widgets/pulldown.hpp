@@ -31,7 +31,7 @@ namespace blunted {
 
       virtual void ProcessWindowingEvent(WindowingEvent *event);
 
-      boost::signals2::signal<void(Gui2Pulldown*)> sig_OnChange;
+      blunted::Signal<void(Gui2Pulldown*)> sig_OnChange;
 
     protected:
       void Select(int selectedEntry);

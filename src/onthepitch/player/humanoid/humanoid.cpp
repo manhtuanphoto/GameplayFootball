@@ -64,7 +64,7 @@ const bool allowTrapReQueue = true;
 const bool allowPreTouchRotationSmuggle = false;
 const bool enableControlledBallCollisions = true;
 
-Humanoid::Humanoid(Player *player, boost::intrusive_ptr<Node> humanoidSourceNode, boost::intrusive_ptr<Node> fullbodySourceNode, std::map<Vector3, Vector3> &colorCoords, boost::shared_ptr<AnimCollection> animCollection, boost::intrusive_ptr<Node> fullbodyTargetNode, boost::intrusive_ptr < Resource<Surface> > kit, int bodyUpdatePhaseOffset) :
+Humanoid::Humanoid(Player *player, blunted::intrusive_ptr<Node> humanoidSourceNode, blunted::intrusive_ptr<Node> fullbodySourceNode, std::map<Vector3, Vector3> &colorCoords, std::shared_ptr<AnimCollection> animCollection, blunted::intrusive_ptr<Node> fullbodyTargetNode, blunted::intrusive_ptr < Resource<Surface> > kit, int bodyUpdatePhaseOffset) :
                   HumanoidBase(player, player->GetTeam()->GetMatch(), humanoidSourceNode, fullbodySourceNode, colorCoords, animCollection, fullbodyTargetNode, kit, bodyUpdatePhaseOffset) {
 
   team = CastPlayer()->GetTeam();
@@ -165,6 +165,10 @@ void Humanoid::Process() {
     if (match->GetDesignatedPossessionPlayer() == player && actionDistance < 3.0f) {
       frameNumPredicate = ((match->GetActualTime_ms() + team->GetID() * 10) % 20) == 0; // .. 1 .. 2 .. 1 .. 2 ..
 
+    } else if (CastPlayer()->GetFormationEntry().role == e_PlayerRole_GK && actionDistance < 28.0f) {
+      // Fast reflex polling for Goalkeepers so fast shots from 12m-26m trigger diving Deflect saves immediately
+      frameNumPredicate = ((match->GetActualTime_ms() + team->GetID() * 10) % 20) == 0;
+
     } else if (match->GetDesignatedPossessionPlayer() == player) {
       frameNumPredicate = ((match->GetActualTime_ms() + team->GetID() * 10) % 30) == 0; // .. 1 .. 2 .. x .. 1 .. 2 .. x ..
 
@@ -189,7 +193,8 @@ void Humanoid::Process() {
   if (mayReQueue) {
 
     float ballDistance = (currentMentalImage->GetBallPrediction(500).Get2D() - spatialState.position).GetLength();
-    if (( (currentAnim->functionType == e_FunctionType_Movement && !CastPlayer()->HasPossession() && ballDistance < 16.0f) ||
+    float maxNoPossBallDist = (CastPlayer()->GetFormationEntry().role == e_PlayerRole_GK) ? 28.0f : 16.0f;
+    if (( (currentAnim->functionType == e_FunctionType_Movement && !CastPlayer()->HasPossession() && ballDistance < maxNoPossBallDist) ||
           (currentAnim->functionType == e_FunctionType_Movement && CastPlayer()->HasPossession()) || // passes / shot
           (currentAnim->functionType == e_FunctionType_Trap && TouchPending()) ||
           (currentAnim->functionType == e_FunctionType_BallControl && TouchPending()) ) &&
@@ -390,7 +395,7 @@ void Humanoid::Process() {
   if (currentAnim->touchFrame == currentAnim->frameNum) {
 
     Vector3 desiredBallPosition;
-    boost::static_pointer_cast<FootballAnimationExtension>(currentAnim->anim->GetExtension("football"))->GetTouchPos(currentAnim->touchFrame, desiredBallPosition);
+    blunted::static_pointer_cast<FootballAnimationExtension>(currentAnim->anim->GetExtension("football"))->GetTouchPos(currentAnim->touchFrame, desiredBallPosition);
     float desiredBallHeight = desiredBallPosition.coords[2];
 
     float touchableDistance = 0.4f;
@@ -653,7 +658,7 @@ void Humanoid::Process() {
       NodeMap::iterator iter = nodeMap.find(currentAnim->anim->GetVariable("outgoing_retain_state"));
       if (iter == nodeMap.end()) iter = nodeMap.find(currentAnim->anim->GetVariable("incoming_retain_state"));
       assert(iter != nodeMap.end());
-      boost::intrusive_ptr<Node> bodyPart = iter->second;
+      blunted::intrusive_ptr<Node> bodyPart = iter->second;
       match->GetBall()->Touch(Vector3(0));
       match->GetBall()->SetRotation(0, 0, 0, 1.0);
       match->GetBall()->SetPosition(bodyPart->GetDerivedPosition() + bodyPart->GetDerivedRotation() * Vector3(0, 0, -0.36f));
@@ -849,45 +854,87 @@ void Humanoid::CalculateGeomOffsets() {
       }
 
 
-      // aim a bit towards ball
+      // 3D Head & Upper-Body Look-At IK (yaw + vertical pitch for aerial balls and on-ball scanning)
 
-      if (adaptBodyToBallPosition && !CastPlayer()->HasPossession()) {
+      if (adaptBodyToBallPosition && IsProceduralIKEnabled()) {
+        Vector3 eyePos = spatialState.position + Vector3(0, 0, 1.62f * zMultiplier);
+        Vector3 ballPos3D = currentMentalImage ? currentMentalImage->GetBallPrediction(60) : match->GetBall()->Predict(60);
+
+        Vector3 target3D = ballPos3D;
+        float lookStrength = 0.85f;
+
+        if (CastPlayer()->HasPossession()) {
+          // On the ball: blend glancing at the ball with scanning up-field toward target/goal
+          Vector3 upfieldPoint = spatialState.position + spatialState.directionVec * 12.0f + Vector3(0, 0, 1.45f);
+          if (currentAnim->originatingCommand.touchInfo.targetPlayer) {
+            upfieldPoint = currentAnim->originatingCommand.touchInfo.targetPlayer->GetPosition() + Vector3(0, 0, 1.5f);
+          } else {
+            Vector3 goalPos = Vector3(-team->GetSide() * pitchHalfW, 0.0f, 1.4f);
+            if ((goalPos - spatialState.position).Get2D().GetLength() < 26.0f) {
+              upfieldPoint = goalPos;
+            }
+          }
+          float ballGlance = (ballPos3D.coords[2] > 0.45f) ? 0.75f : 0.38f;
+          target3D = upfieldPoint * (1.0f - ballGlance) + ballPos3D * ballGlance;
+          lookStrength = 0.72f;
+        }
+
+        Vector3 toTarget = target3D - eyePos;
+        float horizDist = std::max(0.45f, toTarget.Get2D().GetLength());
+        Vector3 bodyDir2D = spatialState.relBodyDirectionVecNonquantized.GetRotated2D(spatialState.angle);
+        radian rawYaw = toTarget.Get2D().GetNormalized(bodyDir2D).GetAngle2D(bodyDir2D);
+
+        // Dampen slightly at full sprint so sprinting posture stays natural
+        float speedDamp = 1.0f - std::pow(NormalizedClamp(spatialState.floatVelocity, idleVelocity, sprintVelocity), 2.0f) * 0.25f;
+
+        radian desiredYaw = 0.0f;
+        radian desiredPitch = 0.0f;
+        if (fabs(rawYaw) < 0.80f * pi) {
+          float fovFade = NormalizedClamp(0.80f * pi - fabs(rawYaw), 0.0f, 0.25f * pi);
+          desiredYaw = clamp(rawYaw, -0.52f * pi, 0.52f * pi) * fovFade * speedDamp;
+          desiredPitch = clamp(std::atan2(toTarget.coords[2], horizDist), -0.22f * pi, 0.30f * pi) * fovFade;
+        }
+
+        smoothedLookYaw += (desiredYaw - smoothedLookYaw) * 0.15f;
+        smoothedLookPitch += (desiredPitch - smoothedLookPitch) * 0.15f;
+
+        if (fabs(smoothedLookYaw) > 0.004f || fabs(smoothedLookPitch) > 0.004f) {
+          Quaternion middleZ, middleX;
+          middleZ.SetAngleAxis(smoothedLookYaw * 0.28f, Vector3(0, 0, 1));
+          middleX.SetAngleAxis(-smoothedLookPitch * 0.28f, Vector3(1, 0, 0));
+          Quaternion middleOrientation = (middleZ * middleX).GetNormalized();
+          SetOffset("middle", lookStrength * 0.42f, middleOrientation, true);
+
+          Quaternion headZ, headX;
+          headZ.SetAngleAxis(smoothedLookYaw * 0.72f, Vector3(0, 0, 1));
+          headX.SetAngleAxis(-smoothedLookPitch * 0.72f, Vector3(1, 0, 0));
+          Quaternion headOrientation = (headZ * headX).GetNormalized();
+          SetOffset("neck", lookStrength * 0.82f, headOrientation, true);
+        }
+      } else if (adaptBodyToBallPosition && !CastPlayer()->HasPossession()) {
         Vector3 toBall = (currentMentalImage->GetBallPrediction(10).Get2D() - spatialState.position).GetNormalized(spatialState.directionVec);
 
-        radian angle = toBall.GetAngle2D(spatialState.relBodyDirectionVecNonquantized.GetRotated2D(spatialState.angle));//FixAngle(toBall.GetAngle2D() - spatialState.bodyAngle);
-        angle = clamp(fabs(angle) - 0.05f * pi, 0.0f, pi) * signSide(angle); // less influence
+        radian angle = toBall.GetAngle2D(spatialState.relBodyDirectionVecNonquantized.GetRotated2D(spatialState.angle));
+        angle = clamp(fabs(angle) - 0.05f * pi, 0.0f, pi) * signSide(angle);
         float lookAtBallBias = std::pow(1.0f - fabs(angle / pi), 0.3f);
         lookAtBallBias = clamp(lookAtBallBias * adaptBodyToBallPosition_influence, 0.0f, 1.0f);
         float ballDistance = match->GetBall()->Predict(100).Get2D().GetDistance(spatialState.position);
         float ballProximityFalloff = 1.6f;
-        if (ballDistance < ballProximityFalloff) { // close ball can be a problem
+        if (ballDistance < ballProximityFalloff) {
           lookAtBallBias *= NormalizedClamp(ballDistance, ballProximityFalloff * 0.4f, ballProximityFalloff);
         }
-        //if (player->GetDebug()) SetYellowDebugPilon(spatialState.position + Vector3(0, -1, 0).GetRotated2D(spatialState.angle + spatialState.relBodyAngleNonquantized) * 5.0f);
         lookAtBallBias *=
             1.0f -
             std::pow(NormalizedClamp(spatialState.floatVelocity, idleVelocity,
                                      sprintVelocity - 0.5f),
                      2.0f) *
-                0.3f;  // less effect on high velo
+                0.3f;
 
-        //Quaternion middleOrientation; middleOrientation.SetAngleAxis(FixAngle(toBall.GetAngle2D()), Vector3(0, 0, 1));
         Quaternion middleOrientation; middleOrientation.SetAngleAxis(angle, Vector3(0, 0, 1));
-
-/*        // look up (does not work since the changes in amount of (main) effect breaks it)
-        float heightFactor = clamp(toBall3D.coords[2] * 1.1f - 0.1f, 0.0f, 1.0f);
-        Quaternion rotX; rotX.SetAngleAxis(heightFactor * 3.5f * pi, Vector3(1, 0, 0));
-        middleOrientation = middleOrientation * rotX;
-*/
-
         middleOrientation.Normalize();
-
-        // correct for body orientation
         SetOffset("middle", lookAtBallBias * 0.3f, middleOrientation, true);
 
-        // this is an incorrect guesstimation
         Quaternion headOrientation; headOrientation.SetAngleAxis(angle, Vector3(0, 0, 1));
-        // correct for body orientation
         headOrientation.Normalize();
         SetOffset("neck", lookAtBallBias * 0.7f, headOrientation, true);
       }
@@ -1101,9 +1148,9 @@ void Humanoid::SelectRetainAnim() {
   assert(dataSet.size() != 0);
 
   #ifdef dataSetSortable
-  dataSet.sort(boost::bind(&Humanoid::CompareMovementSimilarity, this, _1, _2));
+  dataSet.sort(blunted::Bind(&Humanoid::CompareMovementSimilarity, this, _1, _2));
   #else
-  std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&Humanoid::CompareMovementSimilarity, this, _1, _2));
+  std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&Humanoid::CompareMovementSimilarity, this, _1, _2));
   #endif
 
   startAngle = FixAngle((Vector3(0) - startPos).GetAngle2D());//0.5 * pi; (facing right)
@@ -1162,10 +1209,15 @@ bool Humanoid::SelectAnim(const PlayerCommand &command, e_InterruptAnim localInt
 
   // optimizations
 
-  if (command.desiredFunctionType != e_FunctionType_Movement &&
-      command.desiredFunctionType != e_FunctionType_Trip &&
-      command.desiredFunctionType != e_FunctionType_Special &&
-      command.desiredFunctionType != e_FunctionType_Sliding) {
+  if (command.desiredFunctionType == e_FunctionType_Deflect) {
+    if (match->GetBallRetainer() != player &&
+        (currentMentalImage->GetBallPrediction(240).Get2D() - spatialState.position).GetLength() > 16.0f) {
+      return false;
+    }
+  } else if (command.desiredFunctionType != e_FunctionType_Movement &&
+             command.desiredFunctionType != e_FunctionType_Trip &&
+             command.desiredFunctionType != e_FunctionType_Special &&
+             command.desiredFunctionType != e_FunctionType_Sliding) {
     if ((currentMentalImage->GetBallPrediction(200).Get2D() - spatialState.position).GetLength() > ballDistanceOptimizeThreshold) {
       return false;
     }
@@ -1395,14 +1447,14 @@ bool Humanoid::SelectAnim(const PlayerCommand &command, e_InterruptAnim localInt
         _KeepBestBodyDirectionAnims(strictDataSet, command);
 
         SetFootSimilarityPredicate(spatialState.foot);
-        std::stable_sort(lenientDataSet.begin(), lenientDataSet.end(), boost::bind(&Humanoid::CompareFootSimilarity, this, _1, _2));
-        std::stable_sort(strictDataSet.begin(), strictDataSet.end(), boost::bind(&Humanoid::CompareFootSimilarity, this, _1, _2));
+        std::stable_sort(lenientDataSet.begin(), lenientDataSet.end(), blunted::Bind(&Humanoid::CompareFootSimilarity, this, _1, _2));
+        std::stable_sort(strictDataSet.begin(), strictDataSet.end(), blunted::Bind(&Humanoid::CompareFootSimilarity, this, _1, _2));
         SetIncomingVelocitySimilarityPredicate(spatialState.enumVelocity);
-        std::stable_sort(lenientDataSet.begin(), lenientDataSet.end(), boost::bind(&Humanoid::CompareIncomingVelocitySimilarity, this, _1, _2));
-        std::stable_sort(strictDataSet.begin(), strictDataSet.end(), boost::bind(&Humanoid::CompareIncomingVelocitySimilarity, this, _1, _2));
+        std::stable_sort(lenientDataSet.begin(), lenientDataSet.end(), blunted::Bind(&Humanoid::CompareIncomingVelocitySimilarity, this, _1, _2));
+        std::stable_sort(strictDataSet.begin(), strictDataSet.end(), blunted::Bind(&Humanoid::CompareIncomingVelocitySimilarity, this, _1, _2));
         SetIncomingBodyDirectionSimilarityPredicate(spatialState.relBodyDirectionVec);
-        std::stable_sort(lenientDataSet.begin(), lenientDataSet.end(), boost::bind(&Humanoid::CompareIncomingBodyDirectionSimilarity, this, _1, _2));
-        std::stable_sort(strictDataSet.begin(), strictDataSet.end(), boost::bind(&Humanoid::CompareIncomingBodyDirectionSimilarity, this, _1, _2));
+        std::stable_sort(lenientDataSet.begin(), lenientDataSet.end(), blunted::Bind(&Humanoid::CompareIncomingBodyDirectionSimilarity, this, _1, _2));
+        std::stable_sort(strictDataSet.begin(), strictDataSet.end(), blunted::Bind(&Humanoid::CompareIncomingBodyDirectionSimilarity, this, _1, _2));
 
         // this would mean there's a missing anim: the movement from the strict set with the body dir of the lenient one. check it out
         if (lenientDataSet.at(0) != strictDataSet.at(0)) {
@@ -1555,9 +1607,9 @@ bool Humanoid::SelectAnim(const PlayerCommand &command, e_InterruptAnim localInt
 
   SetNumericVariableSimilarityPredicate("priority", 0);
   #ifdef dataSetSortable
-  dataSet.sort(boost::bind(&Humanoid::CompareNumericVariable, this, _1, _2));
+  dataSet.sort(blunted::Bind(&Humanoid::CompareNumericVariable, this, _1, _2));
   #else
-  std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&Humanoid::CompareNumericVariable, this, _1, _2));
+  std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&Humanoid::CompareNumericVariable, this, _1, _2));
   #endif
 
   int desiredIdleLevel = 0;
@@ -1566,33 +1618,33 @@ bool Humanoid::SelectAnim(const PlayerCommand &command, e_InterruptAnim localInt
   else if ((match->GetBall()->Predict(200) - spatialState.position).GetLength() > 16.0f) desiredIdleLevel = 1;
   SetNumericVariableSimilarityPredicate("idlelevel", desiredIdleLevel);
   #ifdef dataSetSortable
-  dataSet.sort(boost::bind(&Humanoid::CompareNumericVariable, this, _1, _2));
+  dataSet.sort(blunted::Bind(&Humanoid::CompareNumericVariable, this, _1, _2));
   #else
-  std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&Humanoid::CompareNumericVariable, this, _1, _2));
+  std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&Humanoid::CompareNumericVariable, this, _1, _2));
   #endif
 
   SetFootSimilarityPredicate(spatialState.foot);
   #ifdef dataSetSortable
-  dataSet.sort(boost::bind(&Humanoid::CompareFootSimilarity, this, _1, _2));
+  dataSet.sort(blunted::Bind(&Humanoid::CompareFootSimilarity, this, _1, _2));
   #else
-  std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&Humanoid::CompareFootSimilarity, this, _1, _2));
+  std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&Humanoid::CompareFootSimilarity, this, _1, _2));
   #endif
 
   if (command.desiredFunctionType != e_FunctionType_BallControl) {
     SetIncomingBodyDirectionSimilarityPredicate(spatialState.relBodyDirectionVec);
     #ifdef dataSetSortable
-    dataSet.sort(boost::bind(&Humanoid::CompareIncomingBodyDirectionSimilarity, this, _1, _2));
+    dataSet.sort(blunted::Bind(&Humanoid::CompareIncomingBodyDirectionSimilarity, this, _1, _2));
     #else
-    std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&Humanoid::CompareIncomingBodyDirectionSimilarity, this, _1, _2));
+    std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&Humanoid::CompareIncomingBodyDirectionSimilarity, this, _1, _2));
     #endif
   }
 
   // moved down
   SetIncomingVelocitySimilarityPredicate(spatialState.enumVelocity);
   #ifdef dataSetSortable
-  dataSet.sort(boost::bind(&Humanoid::CompareIncomingVelocitySimilarity, this, _1, _2));
+  dataSet.sort(blunted::Bind(&Humanoid::CompareIncomingVelocitySimilarity, this, _1, _2));
   #else
-  std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&Humanoid::CompareIncomingVelocitySimilarity, this, _1, _2));
+  std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&Humanoid::CompareIncomingVelocitySimilarity, this, _1, _2));
   #endif
 
 // disabled, are deleted earlier on anyways (not for all types yet! todo!)
@@ -1600,9 +1652,9 @@ bool Humanoid::SelectAnim(const PlayerCommand &command, e_InterruptAnim localInt
   if (command.useDesiredLookAt) {
     SetBodyDirectionSimilarityPredicate(command.desiredLookAt, command.desiredDirection);
     #ifdef dataSetSortable
-    dataSet.sort(boost::bind(&Humanoid::CompareBodyDirectionSimilarity, this, _1, _2));
+    dataSet.sort(blunted::Bind(&Humanoid::CompareBodyDirectionSimilarity, this, _1, _2));
     #else
-    std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&Humanoid::CompareBodyDirectionSimilarity, this, _1, _2));
+    std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&Humanoid::CompareBodyDirectionSimilarity, this, _1, _2));
     #endif
   }
 */
@@ -1612,9 +1664,9 @@ bool Humanoid::SelectAnim(const PlayerCommand &command, e_InterruptAnim localInt
     Vector3 relDesiredTripDirection = command.desiredTripDirection.GetRotated2D(-spatialState.angle);
     SetTripDirectionSimilarityPredicate(relDesiredTripDirection);
     #ifdef dataSetSortable
-    dataSet.sort(boost::bind(&Humanoid::CompareTripDirectionSimilarity, this, _1, _2));
+    dataSet.sort(blunted::Bind(&Humanoid::CompareTripDirectionSimilarity, this, _1, _2));
     #else
-    std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&Humanoid::CompareTripDirectionSimilarity, this, _1, _2));
+    std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&Humanoid::CompareTripDirectionSimilarity, this, _1, _2));
     #endif
     //if (player->GetDebug() && command.desiredFunctionType == e_FunctionType_Trip) SetRedDebugPilon(player->GetPosition() + command.desiredTripDirection * 5);
   }
@@ -1622,17 +1674,17 @@ bool Humanoid::SelectAnim(const PlayerCommand &command, e_InterruptAnim localInt
   // OLD METHOD
   if (command.desiredFunctionType != e_FunctionType_Movement) {
     #ifdef dataSetSortable
-    dataSet.sort(boost::bind(&Humanoid::CompareBaseanimSimilarity, this, _1, _2));
+    dataSet.sort(blunted::Bind(&Humanoid::CompareBaseanimSimilarity, this, _1, _2));
     #else
-    std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&Humanoid::CompareBaseanimSimilarity, this, _1, _2));
+    std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&Humanoid::CompareBaseanimSimilarity, this, _1, _2));
     #endif
   }
 
   if (command.desiredFunctionType == e_FunctionType_Deflect) {
     #ifdef dataSetSortable
-    dataSet.sort(boost::bind(&Humanoid::CompareCatchOrDeflect, this, _1, _2));
+    dataSet.sort(blunted::Bind(&Humanoid::CompareCatchOrDeflect, this, _1, _2));
     #else
-    std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&Humanoid::CompareCatchOrDeflect, this, _1, _2));
+    std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&Humanoid::CompareCatchOrDeflect, this, _1, _2));
     #endif
   }
 
@@ -2052,7 +2104,7 @@ signed int Humanoid::GetBestCheatableAnimID(const DataSet &sortedDataSet, bool u
 
     int frameCount = anim->GetEffectiveFrameCount();
 
-    boost::shared_ptr<FootballAnimationExtension> footballExtension = boost::static_pointer_cast<FootballAnimationExtension>(anim->GetExtension("football"));
+    std::shared_ptr<FootballAnimationExtension> footballExtension = blunted::static_pointer_cast<FootballAnimationExtension>(anim->GetExtension("football"));
 
     int totalTouches = footballExtension->GetTouchCount();
     std::vector<int> touchIDs(totalTouches);
@@ -2146,7 +2198,18 @@ signed int Humanoid::GetBestCheatableAnimID(const DataSet &sortedDataSet, bool u
 
       if (ballPos.coords[2] < 0.5f && isBase) ballDistanceZ = std::max(ballDistanceZ - 0.15f, 0.0f); // low balls should be doable with ground level anims, doesn't look that bad :P
 
-      if (ballDistanceZ < 0.22f) {
+      // Exact FIFA 16.5m penalty-box hand-contact legality for Goalkeeper Deflect/Catch animations (evaluated in world space!)
+      if (functionType == e_FunctionType_Deflect && match->GetBallRetainer() != player) {
+        Vector3 worldTouchBallPos = currentMentalImage->GetBallPrediction(animTouchFrame * 10);
+        if (fabs(worldTouchBallPos.coords[1]) > 20.15f + lineHalfW ||
+            worldTouchBallPos.coords[0] * team->GetSide() < pitchHalfW - 16.5f - lineHalfW) {
+          touchNum++;
+          continue;
+        }
+      }
+
+      float maxBallDistZ = (functionType == e_FunctionType_Deflect) ? 0.52f : 0.22f;
+      if (ballDistanceZ < maxBallDistZ) {
 
         // default touch can be 'cheated' towards best, has biggest 'radius'
         float touchFrameAwkwardness = NormalizedClamp(abs(defaultTouchFrame - animTouchFrame), 0.0f, 4.0f);

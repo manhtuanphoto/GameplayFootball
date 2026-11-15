@@ -57,11 +57,14 @@ struct GLfunctions {
 
   GLfunctions mapping;
 
-  OpenGLRenderer3D::OpenGLRenderer3D() : context(0), contextIsActive(true) {
+  OpenGLRenderer3D::OpenGLRenderer3D() : context(0), window(0), contextIsActive(true), isFullscreen(false), vsyncEnabled(true), aaMode(e_AntiAliasing_FXAA_Quality), maxTextureSize(4096), windowedWidth(1600), windowedHeight(900) {
     FOV = 45;
     overallBrightness = 128;
 
     _cache_activeTextureUnit = -1;
+    for (int i = 0; i < 16; i++) {
+      _cache_boundTexture[i] = -1;
+    }
 
     currentShader = shaders.end();
 
@@ -76,7 +79,22 @@ struct GLfunctions {
   }
 
   void OpenGLRenderer3D::SetMatrix(const std::string &shaderUniformName, const Matrix4 &matrix) {
-    SetUniformMatrix4(currentShader->first, shaderUniformName, matrix);
+    if (currentShader == shaders.end()) return;
+    const Shader &sh = currentShader->second;
+    int loc = -2;
+    if (shaderUniformName == "modelMatrix") loc = sh.loc_modelMatrix;
+    else if (shaderUniformName == "viewMatrix") loc = sh.loc_viewMatrix;
+    else if (shaderUniformName == "projectionMatrix") loc = sh.loc_projectionMatrix;
+    else if (shaderUniformName == "orthoProjectionMatrix") loc = sh.loc_orthoProjectionMatrix;
+    else if (shaderUniformName == "orthoViewMatrix") loc = sh.loc_orthoViewMatrix;
+    else if (shaderUniformName == "model") loc = sh.loc_model;
+    else if (shaderUniformName == "projection") loc = sh.loc_projection;
+
+    if (loc >= 0) {
+      mapping.glUniformMatrix4fv(loc, 1, true, (float*)matrix.elements);
+    } else if (loc == -2) {
+      SetUniformMatrix4(currentShader->first, shaderUniformName, matrix);
+    }
   }
 
   //void OpenGLRenderer3D::RenderOverlay2D(MessageQueue<Overlay2DQueueEntry> &overlay2DQueue) {
@@ -88,6 +106,29 @@ struct GLfunctions {
       return;
     }
 
+    int drawableW = context_width;
+    int drawableH = context_height;
+    GetDrawableSize(drawableW, drawableH);
+
+    float targetAspect = (float)context_width / (float)std::max(1, context_height);
+    float drawableAspect = (float)drawableW / (float)std::max(1, drawableH);
+    int outW = drawableW;
+    int outH = drawableH;
+    int outX = 0;
+    int outY = 0;
+    if (std::fabs(drawableAspect - targetAspect) > 0.01f) {
+      if (drawableAspect > targetAspect) {
+        outH = drawableH;
+        outW = int(std::round(outH * targetAspect));
+        outX = (drawableW - outW) / 2;
+      } else {
+        outW = drawableW;
+        outH = int(std::round(outW / targetAspect));
+        outY = (drawableH - outH) / 2;
+      }
+    }
+    SetViewport(outX, outY, std::max(1, outW), std::max(1, outH));
+
     mapping.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     mapping.glEnable(GL_BLEND);
     mapping.glDisable(GL_DEPTH_TEST);
@@ -96,7 +137,6 @@ struct GLfunctions {
 
     UseShader("overlay");
 
-    // VK: TODO: check window size instead?
     Matrix4 orthoMatrix = CreateOrthoMatrix(0, context_width, context_height, 0, 0.1, 10);
     SetMatrix("projection", orthoMatrix);
 
@@ -116,6 +156,8 @@ struct GLfunctions {
     }
 
     mapping.glBindVertexArray(0);
+
+    SetViewport(0, 0, drawableW, drawableH);
 
     mapping.glEnable(GL_DEPTH_TEST);
     mapping.glEnable(GL_CULL_FACE);
@@ -181,48 +223,57 @@ struct GLfunctions {
   }
 
   void OpenGLRenderer3D::RenderLights(std::deque<LightQueueEntry> &lightQueue, const Matrix4 &projectionMatrix, const Matrix4 &viewMatrix) {
+    if (currentShader == shaders.end()) return;
+    const Shader &sh = currentShader->second;
     Vector3 cameraPos = viewMatrix.GetInverse().GetTranslation();
 
-    SetUniformFloat3(currentShader->first, "cameraPosition", cameraPos.coords[0], cameraPos.coords[1], cameraPos.coords[2]);
+    if (sh.loc_cameraPosition >= 0) {
+      mapping.glUniform3f(sh.loc_cameraPosition, cameraPos.coords[0], cameraPos.coords[1], cameraPos.coords[2]);
+    }
+
+    Matrix4 toTexCoords(MATRIX4_IDENTITY);
+    toTexCoords.SetTranslation(Vector3(0.5f, 0.5f, 0.5f));
+    toTexCoords.SetScale(Vector3(0.5f, 0.5f, 0.5f));
+
+    Matrix4 orthoMatrix = CreateOrthoMatrix(-1, 1, -1, 1, 0.0f, 1.0f);
+    Matrix4 xviewMatrix(MATRIX4_IDENTITY);
+    xviewMatrix.SetTranslation(Vector3(0, 0, -0.5f));
+    Matrix4 identityModel(MATRIX4_IDENTITY);
 
     std::deque<LightQueueEntry>::iterator lightIter = lightQueue.begin();
 
     while (lightIter != lightQueue.end()) {
       const LightQueueEntry &light = (*lightIter);
 
-      // todo: add light types SetUniformInt("lighting", "lightType", (int)light.type);
-
-      // bind shadow map
-      SetUniformInt(currentShader->first, "has_shadow", (int)light.hasShadow);
+      if (sh.loc_hasShadow >= 0) {
+        mapping.glUniform1i(sh.loc_hasShadow, (int)light.hasShadow);
+      }
       if (light.hasShadow) {
         SetTextureUnit(7);
-        mapping.glBindTexture(GL_TEXTURE_2D, light.shadowMapTexture->GetResource()->GetID());
+        BindTexture(light.shadowMapTexture->GetResource()->GetID());
 
-        Matrix4 toTexCoords(MATRIX4_IDENTITY);
-        toTexCoords.SetTranslation(Vector3(0.5f, 0.5f, 0.5f));
-        toTexCoords.SetScale(Vector3(0.5f, 0.5f, 0.5f));
-        SetUniformMatrix4(currentShader->first, "lightViewProjectionMatrix", toTexCoords * (*lightIter).lightProjectionMatrix * (*lightIter).lightViewMatrix);
-
+        if (sh.loc_lightViewProjectionMatrix >= 0) {
+          Matrix4 lvp = toTexCoords * (*lightIter).lightProjectionMatrix * (*lightIter).lightViewMatrix;
+          mapping.glUniformMatrix4fv(sh.loc_lightViewProjectionMatrix, 1, true, (float*)lvp.elements);
+        }
       }
 
-      SetUniformFloat3(currentShader->first, "lightColor", light.color.coords[0], light.color.coords[1], light.color.coords[2]);
-      SetUniformFloat(currentShader->first, "lightRadius", light.radius);
-      SetUniformFloat3(currentShader->first, "lightPosition", light.position.coords[0], light.position.coords[1], light.position.coords[2]);
+      if (sh.loc_lightColor >= 0) {
+        mapping.glUniform3f(sh.loc_lightColor, light.color.coords[0], light.color.coords[1], light.color.coords[2]);
+      }
+      if (sh.loc_lightRadius >= 0) {
+        mapping.glUniform1f(sh.loc_lightRadius, light.radius);
+      }
+      if (sh.loc_lightPosition >= 0) {
+        mapping.glUniform3f(sh.loc_lightPosition, light.position.coords[0], light.position.coords[1], light.position.coords[2]);
+      }
 
       int quad_or_sphere = 1;
       if (light.type == 0) {
-
-      quad_or_sphere = 0;  // directional light: visible anyway, everywhere.
-                           // draw fullscreen quad
-
-      } else if (light.type == 1) { // sphere
+        quad_or_sphere = 0;
+      } else if (light.type == 1) {
         AABB aabb = light.aabb;
-        // get the spherical bounding box of the aabb
-        // if the camera is inside this sphere, draw a fullscreen quad instead of a sphere
-        // else, the sphere wouldn't be rendered..
-        //float boundingSphereRadius = aabb.GetRadius();//light.position.GetDistance(Vector3(aabb.minxyz.coords[0], aabb.minxyz.coords[1], aabb.minxyz.coords[2]));
         if (cameraPos.GetDistance(light.position) <= aabb.GetRadius()) {
-          // cam is within light radius, draw all
           quad_or_sphere = 0;
         } else {
           quad_or_sphere = 1;
@@ -230,26 +281,17 @@ struct GLfunctions {
       }
 
       if (quad_or_sphere == 0) {
-
-        // QUAD
-
         SetCullingMode(e_CullingMode_Off);
         SetDepthFunction(e_DepthFunction_Always);
 
-        Matrix4 orthoMatrix = CreateOrthoMatrix(-1, 1, -1, 1, 0.0f, 1.0f);
-        SetMatrix("projectionMatrix", orthoMatrix);
-        Matrix4 xviewMatrix(MATRIX4_IDENTITY);
-        xviewMatrix.SetTranslation(Vector3(0, 0, -0.5f));
-        SetMatrix("viewMatrix", xviewMatrix);
-        Matrix4 modelMatrix(MATRIX4_IDENTITY);
-        SetMatrix("modelMatrix", modelMatrix);
+        if (sh.loc_projectionMatrix >= 0) mapping.glUniformMatrix4fv(sh.loc_projectionMatrix, 1, true, (float*)orthoMatrix.elements);
+        if (sh.loc_viewMatrix >= 0) mapping.glUniformMatrix4fv(sh.loc_viewMatrix, 1, true, (float*)xviewMatrix.elements);
+        if (sh.loc_modelMatrix >= 0) mapping.glUniformMatrix4fv(sh.loc_modelMatrix, 1, true, (float*)identityModel.elements);
 
-      mapping.glBindVertexArray(quadBuffer.vertexArrayID);
-      mapping.glDrawArrays(GL_TRIANGLES, 0, 6);
-      mapping.glBindVertexArray(0);
-    } else {  // Never called (because light.type is always set to 0)
-        // SPHERE
-
+        mapping.glBindVertexArray(quadBuffer.vertexArrayID);
+        mapping.glDrawArrays(GL_TRIANGLES, 0, 6);
+        mapping.glBindVertexArray(0);
+      } else {
         SetCullingMode(e_CullingMode_Back);
         SetDepthFunction(e_DepthFunction_Less);
 
@@ -264,7 +306,8 @@ struct GLfunctions {
       }
 
       if (light.hasShadow) {
-        mapping.glBindTexture(GL_TEXTURE_2D, 0);
+        SetTextureUnit(7);
+        BindTexture(0);
         SetTextureUnit(0);
       }
 
@@ -340,17 +383,14 @@ struct GLfunctions {
     this->context_width = width;
     this->context_height = height;
     this->context_bpp = bpp;
+    this->isFullscreen = fullscreen;
+    this->windowedWidth = width;
+    this->windowedHeight = height;
 
     // default values
-    this->cameraNear = 30.0;
-    this->cameraFar = 270.0;
+    this->cameraNear = 3.0f;
+    this->cameraFar = 340.0f;
 
-// #ifdef __linux__
-//     #include <X11/Xlib.h>
-//     XInitThreads();
-// #endif
-
-//#ifdef WIN32
     // SDL subsystems must be initialized before setting attributes
     SDL_Init(SDL_INIT_VIDEO);
 
@@ -358,33 +398,24 @@ struct GLfunctions {
     SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-
     SDL_GL_SetAttribute(SDL_GL_ACCELERATED_VISUAL, 1);
+    SDL_GL_SetAttribute(SDL_GL_FRAMEBUFFER_SRGB_CAPABLE, 1);
 
-    //SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    //SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
-    //SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    Uint32 windowFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+    if (fullscreen) {
+      windowFlags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+    }
 
-    // todo: remember to enable this later on, after migrating to sdl 2 (though it is on by default with most drivers, or so it seems)
-    //SDL_GL_SetAttribute(SDL_GL_FRAMEBUFFER_SRGB_CAPABLE, 1);
-
-//    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-//    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
-//    SDL_GL_SetAttribute(SDL_GL_ACCELERATED_VISUAL, 1);
-//recently disabled  SDL_GL_SetAttribute(SDL_GL_SWAP_CONTROL, 1); // wait for vsync?
-//  int SDLerror = SDL_GL_SetSwapInterval(-1);
-//  if (SDLerror == -1) SDL_GL_SetSwapInterval(1);
-
-//#endif
-
-    window = SDL_CreateWindow("Gameplay Football", SDL_WINDOWPOS_UNDEFINED,
-                                SDL_WINDOWPOS_UNDEFINED, width, height,
-                                SDL_WINDOW_OPENGL /* | SDL_RESIZABLE*/ |
-                                (fullscreen ? SDL_WINDOW_FULLSCREEN : 0));
+    window = SDL_CreateWindow("Gameplay Football",
+                              SDL_WINDOWPOS_CENTERED,
+                              SDL_WINDOWPOS_CENTERED,
+                              width, height,
+                              windowFlags);
     context = SDL_GL_CreateContext(window);
+    SetVSync(vsyncEnabled);
 
 
     //    *reinterpret_cast<void**>(&(mapping.func)) =
@@ -484,6 +515,9 @@ struct GLfunctions {
     //SDL_WarpMouse(1280 * 3, 1024);
     largest_supported_anisotropy = 2;
     mapping.glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &largest_supported_anisotropy);
+    GLint glMaxTex = 4096;
+    mapping.glGetIntegerv(GL_MAX_TEXTURE_SIZE, &glMaxTex);
+    if (glMaxTex >= 2048) maxTextureSize = (int)glMaxTex;
     //largest_supported_anisotropy = clamp(largest_supported_anisotropy, 0, 8); // don't overdo it
 
 
@@ -506,13 +540,14 @@ struct GLfunctions {
     LoadShader("ambient", "media/shaders/ambient");
     LoadShader("zphase", "media/shaders/zphase");
     LoadShader("postprocess", "media/shaders/postprocess");
+    LoadShader("aa", "media/shaders/aa");
     LoadShader("overlay", "media/shaders/overlay");
 
     currentShader = shaders.begin();
 
 
     SDL_Surface *noise = IMG_Load("media/shaders/noise.png");
-    noiseTexID = CreateTexture(e_InternalPixelFormat_RGB8, e_PixelFormat_RGB, noise->w, noise->h, false, true, false, false, false);
+    noiseTexID = CreateTexture(e_InternalPixelFormat_RGB8, e_PixelFormat_RGB, noise->w, noise->h, false, true, false, true, false);
     UpdateTexture(noiseTexID, noise, false, false);
     SDL_FreeSurface(noise);
 
@@ -549,83 +584,82 @@ struct GLfunctions {
     // (actually, erasion 'works', but it does leave 'empty' records in the views vector, which is ugly and memory-leaky)
   }
 
-  int OpenGLRenderer3D::CreateView(float x_percent, float y_percent, float width_percent, float height_percent) {
+  void OpenGLRenderer3D::ComputeViewRenderSize(const View &view, int &renderW, int &renderH) {
+    int drawableW = context_width;
+    int drawableH = context_height;
+    GetDrawableSize(drawableW, drawableH);
 
-    Log(e_Notice, "OpenGLRenderer3D", "CreateView", "Creating new view, id " + int_to_str(views.size()));
+    float targetAspect = (float)context_width / (float)std::max(1, context_height);
+    float drawableAspect = (float)drawableW / (float)std::max(1, drawableH);
+    int fitW = drawableW;
+    int fitH = drawableH;
+    if (std::fabs(drawableAspect - targetAspect) > 0.01f) {
+      if (drawableAspect > targetAspect) {
+        fitH = drawableH;
+        fitW = int(std::round(fitH * targetAspect));
+      } else {
+        fitW = drawableW;
+        fitH = int(std::round(fitW / targetAspect));
+      }
+    }
 
-    View view;
+    int nativeViewW = std::max(64, int(std::round(view.width_percent * 0.01f * fitW)));
+    int nativeViewH = std::max(64, int(std::round(view.height_percent * 0.01f * fitH)));
 
-    view.target = e_ViewRenderTarget_Context;
-    view.targetTexID = 0;
-    view.x = int(floor(x_percent * 0.01 * context_width));
-    view.y = int(floor(y_percent * 0.01 * context_height));
-    view.width = int(floor(width_percent * 0.01 * context_width));
-    view.height = int(floor(height_percent * 0.01 * context_height));
+    float ssaaScale = (aaMode == e_AntiAliasing_Ultra_SSAA) ? 1.35f : 1.0f;
+    int targetW = std::max(64, int(std::round(nativeViewW * ssaaScale)));
+    int targetH = std::max(64, int(std::round(nativeViewH * ssaaScale)));
 
+    int maxSafeW = std::min(maxTextureSize, std::max(nativeViewW, 3840));
+    int maxSafeH = std::min(maxTextureSize, std::max(nativeViewH, 2160));
+    if (targetW > maxSafeW || targetH > maxSafeH) {
+      float clampScale = std::min((float)maxSafeW / (float)targetW, (float)maxSafeH / (float)targetH);
+      targetW = std::max(64, int(std::round(targetW * clampScale)));
+      targetH = std::max(64, int(std::round(targetH * clampScale)));
+    }
 
-    // init FBO
+    renderW = (targetW + 1) & ~1;
+    renderH = (targetH + 1) & ~1;
+  }
 
-    int gBufWidth = view.width;
-    int gBufHeight = view.height;
+  void OpenGLRenderer3D::AllocateViewBuffers(View &view, int renderW, int renderH) {
+    view.width = renderW;
+    view.height = renderH;
 
+    std::vector<e_TargetAttachment> targets;
+
+    // G-buffer
     view.gBufferID = CreateFrameBuffer();
     BindFrameBuffer(view.gBufferID);
 
-    // texture buffers
-    view.gBuffer_DepthTexID = CreateTexture(e_InternalPixelFormat_DepthComponent16, e_PixelFormat_DepthComponent, gBufWidth, gBufHeight, false, false, false, false, false);
+    view.gBuffer_DepthTexID = CreateTexture(e_InternalPixelFormat_DepthComponent32F, e_PixelFormat_DepthComponent, renderW, renderH, false, false, false, false, false);
     SetFrameBufferTexture2D(e_TargetAttachment_Depth, view.gBuffer_DepthTexID);
 
-    //view.gBuffer_AlbedoTexID = CreateTexture(e_InternalPixelFormat_RGBA8, e_PixelFormat_RGBA, gBufWidth, gBufHeight, false, false, false, false, false);
-    view.gBuffer_AlbedoTexID = CreateTexture(e_InternalPixelFormat_RGBA16F, e_PixelFormat_RGBA, gBufWidth, gBufHeight, false, false, false, false, false);
-    //view.gBuffer_AlbedoTexID = CreateTexture(e_InternalPixelFormat_RGBA32F, e_PixelFormat_RGBA, gBufWidth, gBufHeight, false, false, false, false, false);
+    view.gBuffer_AlbedoTexID = CreateTexture(e_InternalPixelFormat_RGBA16F, e_PixelFormat_RGBA, renderW, renderH, false, false, false, false, false);
     SetFrameBufferTexture2D(e_TargetAttachment_Color0, view.gBuffer_AlbedoTexID);
 
-    //view.gBuffer_NormalTexID = CreateTexture(e_InternalPixelFormat_RGBA8, e_PixelFormat_RGBA, gBufWidth, gBufHeight, false, false, false, false, false);
-    view.gBuffer_NormalTexID = CreateTexture(e_InternalPixelFormat_RGBA16F, e_PixelFormat_RGBA, gBufWidth, gBufHeight, false, false, false, false, false);
-    //view.gBuffer_NormalTexID = CreateTexture(e_InternalPixelFormat_RGBA32F, e_PixelFormat_RGBA, gBufWidth, gBufHeight, false, false, false, false);
+    view.gBuffer_NormalTexID = CreateTexture(e_InternalPixelFormat_RGBA16F, e_PixelFormat_RGBA, renderW, renderH, false, false, false, false, false);
     SetFrameBufferTexture2D(e_TargetAttachment_Color1, view.gBuffer_NormalTexID);
 
-    //view.gBuffer_AuxTexID = CreateTexture(e_InternalPixelFormat_RGBA8, e_PixelFormat_RGBA, gBufWidth, gBufHeight, false, false, false, false, false);
-    view.gBuffer_AuxTexID = CreateTexture(e_InternalPixelFormat_RGBA16F, e_PixelFormat_RGBA, gBufWidth, gBufHeight, false, false, false, false, false);
-    //view.gBuffer_AuxTexID = CreateTexture(e_InternalPixelFormat_RGBA32F, e_PixelFormat_RGBA, gBufWidth, gBufHeight, false, false, false, false, false);
+    view.gBuffer_AuxTexID = CreateTexture(e_InternalPixelFormat_R8, e_PixelFormat_Red, renderW, renderH, false, false, false, false, false);
     SetFrameBufferTexture2D(e_TargetAttachment_Color2, view.gBuffer_AuxTexID);
 
-    std::vector<e_TargetAttachment> targets;
     targets.push_back(e_TargetAttachment_Color0);
     targets.push_back(e_TargetAttachment_Color1);
     targets.push_back(e_TargetAttachment_Color2);
     SetRenderTargets(targets);
     targets.clear();
 
-    if (!CheckFrameBufferStatus()) Log(e_FatalError, "OpenGLRenderer3D", "CreateView", "Could not create G-buffer");
+    if (!CheckFrameBufferStatus()) Log(e_FatalError, "OpenGLRenderer3D", "AllocateViewBuffers", "Could not create G-buffer");
 
-    BindFrameBuffer(0);
-
-    targets.push_back(e_TargetAttachment_Back);
-    SetRenderTargets(targets);
-    targets.clear();
-
-
-    // accumulation buffer
-
-    int accumBufWidth = view.width;
-    int accumBufHeight = view.height;
-
+    // Accumulation buffer
     view.accumBufferID = CreateFrameBuffer();
     BindFrameBuffer(view.accumBufferID);
 
-    //view.accumBuffer_DepthTexID = CreateTexture(e_InternalPixelFormat_DepthComponent32F, e_PixelFormat_DepthComponent, accumBufWidth, accumBufHeight, false, false, false, false);
-    //SetFrameBufferTexture2D(e_TargetAttachment_Depth, view.accumBuffer_DepthTexID);
-
-    //view.accumBuffer_AccumTexID = CreateTexture(e_InternalPixelFormat_RGB8, e_PixelFormat_RGB, accumBufWidth, accumBufHeight, false, false, false, false, false);
-    view.accumBuffer_AccumTexID = CreateTexture(e_InternalPixelFormat_RGBA16F, e_PixelFormat_RGBA, accumBufWidth, accumBufHeight, false, false, false, false, false);
-    //view.accumBuffer_AccumTexID = CreateTexture(e_InternalPixelFormat_RGBA32F, e_PixelFormat_RGBA, accumBufWidth, accumBufHeight, false, false, false, false, false);
+    view.accumBuffer_AccumTexID = CreateTexture(e_InternalPixelFormat_RGBA16F, e_PixelFormat_RGBA, renderW, renderH, false, false, false, true, false);
     SetFrameBufferTexture2D(e_TargetAttachment_Color0, view.accumBuffer_AccumTexID);
 
-    // Geforce GT 230 doesn't seem to be too happy about e_InternalPixelFormat_RGBA16 for some reason. Very slow framerates ensue
-    //view.accumBuffer_ModifierTexID = CreateTexture(e_InternalPixelFormat_RGBA8, e_PixelFormat_RGB, accumBufWidth, accumBufHeight, false, false, false, false, false);
-    view.accumBuffer_ModifierTexID = CreateTexture(e_InternalPixelFormat_RGBA16F, e_PixelFormat_RGBA, accumBufWidth, accumBufHeight, false, false, false, false, false);
-    //view.accumBuffer_ModifierTexID = CreateTexture(e_InternalPixelFormat_RGBA32F, e_PixelFormat_RGBA, accumBufWidth, accumBufHeight, false, false, false, false, false);
+    view.accumBuffer_ModifierTexID = CreateTexture(e_InternalPixelFormat_RG16F, e_PixelFormat_RG, renderW, renderH, false, false, false, true, false);
     SetFrameBufferTexture2D(e_TargetAttachment_Color1, view.accumBuffer_ModifierTexID);
 
     targets.push_back(e_TargetAttachment_Color0);
@@ -633,13 +667,102 @@ struct GLfunctions {
     SetRenderTargets(targets);
     targets.clear();
 
-    if (!CheckFrameBufferStatus()) Log(e_FatalError, "OpenGLRenderer3D", "CreateView", "Could not create Accumulation buffer");
+    if (!CheckFrameBufferStatus()) Log(e_FatalError, "OpenGLRenderer3D", "AllocateViewBuffers", "Could not create Accumulation buffer");
+
+    // Tone-mapped sRGB + Perceptual Luma post-process buffer for Anti-Aliasing pass
+    view.postProcessBufferID = CreateFrameBuffer();
+    BindFrameBuffer(view.postProcessBufferID);
+
+    view.postProcessTexID = CreateTexture(e_InternalPixelFormat_RGBA8, e_PixelFormat_RGBA, renderW, renderH, true, false, false, true, false);
+    SetFrameBufferTexture2D(e_TargetAttachment_Color0, view.postProcessTexID);
+
+    targets.push_back(e_TargetAttachment_Color0);
+    SetRenderTargets(targets);
+    targets.clear();
+
+    if (!CheckFrameBufferStatus()) Log(e_FatalError, "OpenGLRenderer3D", "AllocateViewBuffers", "Could not create PostProcess buffer");
 
     BindFrameBuffer(0);
-
     targets.push_back(e_TargetAttachment_Back);
     SetRenderTargets(targets);
     targets.clear();
+  }
+
+  void OpenGLRenderer3D::DestroyViewBuffers(View &view) {
+    if (view.gBufferID != 0) {
+      BindFrameBuffer(view.gBufferID);
+      SetFrameBufferTexture2D(e_TargetAttachment_Depth, 0);
+      SetFrameBufferTexture2D(e_TargetAttachment_Color0, 0);
+      SetFrameBufferTexture2D(e_TargetAttachment_Color1, 0);
+      SetFrameBufferTexture2D(e_TargetAttachment_Color2, 0);
+      DeleteFrameBuffer(view.gBufferID);
+      view.gBufferID = 0;
+    }
+
+    if (view.accumBufferID != 0) {
+      BindFrameBuffer(view.accumBufferID);
+      SetFrameBufferTexture2D(e_TargetAttachment_Color0, 0);
+      SetFrameBufferTexture2D(e_TargetAttachment_Color1, 0);
+      DeleteFrameBuffer(view.accumBufferID);
+      view.accumBufferID = 0;
+    }
+
+    if (view.postProcessBufferID != 0) {
+      BindFrameBuffer(view.postProcessBufferID);
+      SetFrameBufferTexture2D(e_TargetAttachment_Color0, 0);
+      DeleteFrameBuffer(view.postProcessBufferID);
+      view.postProcessBufferID = 0;
+    }
+
+    BindFrameBuffer(0);
+
+    if (view.gBuffer_AlbedoTexID != 0) { DeleteTexture(view.gBuffer_AlbedoTexID); view.gBuffer_AlbedoTexID = 0; }
+    if (view.gBuffer_NormalTexID != 0) { DeleteTexture(view.gBuffer_NormalTexID); view.gBuffer_NormalTexID = 0; }
+    if (view.gBuffer_DepthTexID != 0)  { DeleteTexture(view.gBuffer_DepthTexID);  view.gBuffer_DepthTexID = 0; }
+    if (view.gBuffer_AuxTexID != 0)    { DeleteTexture(view.gBuffer_AuxTexID);    view.gBuffer_AuxTexID = 0; }
+
+    if (view.accumBuffer_AccumTexID != 0)    { DeleteTexture(view.accumBuffer_AccumTexID);    view.accumBuffer_AccumTexID = 0; }
+    if (view.accumBuffer_ModifierTexID != 0) { DeleteTexture(view.accumBuffer_ModifierTexID); view.accumBuffer_ModifierTexID = 0; }
+
+    if (view.postProcessTexID != 0) { DeleteTexture(view.postProcessTexID); view.postProcessTexID = 0; }
+  }
+
+  void OpenGLRenderer3D::RefreshAllViews() {
+    if (!context) return;
+    for (size_t i = 0; i < views.size(); ++i) {
+      View &view = views[i];
+      if (!view.active) continue;
+      int newW = view.width;
+      int newH = view.height;
+      ComputeViewRenderSize(view, newW, newH);
+      if (newW != view.width || newH != view.height) {
+        DestroyViewBuffers(view);
+        AllocateViewBuffers(view, newW, newH);
+      }
+    }
+  }
+
+  int OpenGLRenderer3D::CreateView(float x_percent, float y_percent, float width_percent, float height_percent) {
+
+    Log(e_Notice, "OpenGLRenderer3D", "CreateView", "Creating new view, id " + int_to_str(views.size()));
+
+    View view;
+    view.active = true;
+    view.target = e_ViewRenderTarget_Context;
+    view.targetTexID = 0;
+    view.x_percent = x_percent;
+    view.y_percent = y_percent;
+    view.width_percent = width_percent;
+    view.height_percent = height_percent;
+    view.x = int(floor(x_percent * 0.01 * context_width));
+    view.y = int(floor(y_percent * 0.01 * context_height));
+    view.baseWidth = std::max(1, int(floor(width_percent * 0.01 * context_width)));
+    view.baseHeight = std::max(1, int(floor(height_percent * 0.01 * context_height)));
+
+    int renderW = view.baseWidth;
+    int renderH = view.baseHeight;
+    ComputeViewRenderSize(view, renderW, renderH);
+    AllocateViewBuffers(view, renderW, renderH);
 
     views.push_back(view);
 
@@ -655,27 +778,8 @@ struct GLfunctions {
     Log(e_Notice, "OpenGLRenderer3D", "DeleteView", "Deleting view, id " + int_to_str(viewID));
 
     View *view = &views.at(viewID);
-
-    BindFrameBuffer(view->gBufferID);
-    SetFrameBufferTexture2D(e_TargetAttachment_Depth, 0);
-    SetFrameBufferTexture2D(e_TargetAttachment_Color0, 0);
-    SetFrameBufferTexture2D(e_TargetAttachment_Color1, 0);
-    SetFrameBufferTexture2D(e_TargetAttachment_Color2, 0);
-    DeleteFrameBuffer(view->gBufferID);
-
-    BindFrameBuffer(view->accumBufferID);
-    SetFrameBufferTexture2D(e_TargetAttachment_Color0, 0);
-    SetFrameBufferTexture2D(e_TargetAttachment_Color1, 0);
-    DeleteFrameBuffer(view->accumBufferID);
-
-    DeleteTexture(view->gBuffer_AlbedoTexID);
-    DeleteTexture(view->gBuffer_NormalTexID);
-    DeleteTexture(view->gBuffer_DepthTexID);
-    DeleteTexture(view->gBuffer_AuxTexID);
-
-    DeleteTexture(view->accumBuffer_AccumTexID);
-    DeleteTexture(view->accumBuffer_ModifierTexID);
-    //printf("done deleting view %i\n", viewID);
+    view->active = false;
+    DestroyViewBuffers(*view);
   }
 
   // general
@@ -882,10 +986,11 @@ struct GLfunctions {
       return GLfunc;
     }
 
-    VertexBufferID OpenGLRenderer3D::CreateVertexBuffer(float *vertices, unsigned int verticesDataSize, std::vector<unsigned int> indices, e_VertexBufferUsage usage) {
+    VertexBufferID OpenGLRenderer3D::CreateVertexBuffer(float *vertices, unsigned int verticesDataSize, std::vector<unsigned int> indices, e_VertexBufferUsage usage, const std::vector<float> &skinData) {
 
       GLuint iid; // element indices
       unsigned int vertexArrayID;
+      GLuint skinBid = 0;
 
       bool pingPong = false;
       if (usage == e_VertexBufferUsage_DynamicDraw || usage == e_VertexBufferUsage_DynamicRead || usage == e_VertexBufferUsage_DynamicCopy ||
@@ -896,6 +1001,13 @@ struct GLfunctions {
 
       int firstBuffer_id = 0;
       int firstArray_id = 0;
+
+      if (!skinData.empty()) {
+        mapping.glGenBuffers(1, &skinBid);
+        mapping.glBindBuffer(GL_ARRAY_BUFFER, skinBid);
+        mapping.glBufferData(GL_ARRAY_BUFFER, skinData.size() * sizeof(float), &skinData[0], GL_STATIC_DRAW);
+        mapping.glBindBuffer(GL_ARRAY_BUFFER, 0);
+      }
 
       for (int b = 0; b < number; b++) {
         GLuint vid;
@@ -934,6 +1046,14 @@ struct GLfunctions {
           mapping.glEnableVertexAttribArray(i);
         }
 
+        if (skinBid != 0) {
+          mapping.glBindBuffer(GL_ARRAY_BUFFER, skinBid);
+          mapping.glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, 8 * sizeof(float), BUFFER_OFFSET(0));
+          mapping.glEnableVertexAttribArray(5);
+          mapping.glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, 8 * sizeof(float), BUFFER_OFFSET(4 * sizeof(float)));
+          mapping.glEnableVertexAttribArray(6);
+        }
+
         if (b == 1) {
           VAOReadIndex.insert(std::pair<int, int>(firstArray_id, 0));
           VBOPingPongMap.insert(std::pair<int, int>(firstBuffer_id, buffer_id));
@@ -950,6 +1070,7 @@ struct GLfunctions {
       vertexBufferID.bufferID = firstBuffer_id;
       vertexBufferID.vertexArrayID = firstArray_id;
       vertexBufferID.elementArrayID = iid;
+      vertexBufferID.skinBufferID = skinBid;
 
       //vertexArrayID = firstArray_id;
       return vertexBufferID;
@@ -1036,6 +1157,11 @@ struct GLfunctions {
     GLuint glElementArrayID = vertexBufferID.elementArrayID;
     mapping.glDeleteBuffers(1, &glElementArrayID);
 
+    if (vertexBufferID.skinBufferID != 0) {
+      GLuint glSkinBufferID = vertexBufferID.skinBufferID;
+      mapping.glDeleteBuffers(1, &glSkinBufferID);
+    }
+
     GLuint glVertexArrayID = vertexBufferID.vertexArrayID;
     mapping.glDeleteVertexArrays(1, &glVertexArrayID);
 
@@ -1069,34 +1195,15 @@ struct GLfunctions {
   }
 
   void DrawBufferChunk(int startIndex, int count) {
-    // draw buffer
     if (count > 0) {
       #define BUFFER_OFFSET( i ) ((char *)NULL + (i))
-      mapping.glDrawRangeElements(GL_TRIANGLES, startIndex, startIndex + count, count, GL_UNSIGNED_INT, BUFFER_OFFSET(startIndex * sizeof(unsigned int)));
+      mapping.glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_INT, BUFFER_OFFSET(startIndex * sizeof(unsigned int)));
     }
   }
 
   void OpenGLRenderer3D::RenderVertexBuffer(const std::deque<VertexBufferQueueEntry> &vertexBufferQueue, e_RenderMode renderMode) {
 
-    /*
-    CPrecisionTimer myTimer;
-    boost::this_thread::yield();
-    myTimer.Start();
-
-    printf("it took %f milliseconds\n", myTimer.Stop() * 1000.0);
-    */
-
-    //glMatrixMode(GL_MODELVIEW);
-
     VertexBuffer *vertexBuffer;
-
-// Deprecated
-//  if (renderMode != e_RenderMode_GeometryOnly) {
-//    DO_VALIDATION;
-//    mapping.glEnable(GL_TEXTURE_2D);
-//  } else {
-//    mapping.glDisable(GL_TEXTURE_2D);
-//  }
 
     signed int currentDiffuseTextureID = -1;
     signed int currentNormalTextureID = -1;
@@ -1104,213 +1211,176 @@ struct GLfunctions {
     signed int currentIlluminationTextureID = -1;
     signed int currentBoundBuffer = -1;
 
-    //int bufferSize = vertexBufferQueue.size();
     int bufferSwitches = 0;
 
-    //glPolygonMode(GL_FRONT, GL_FILL);
-    //glColor3f(1, 1, 1);
-
-    //glEnableClientState(GL_VERTEX_ARRAY);
-
-   	Matrix4 transform;
+    Matrix4 transform;
+    int currentHasSkinning = -1;
+    const bool hasShader = (currentShader != shaders.end());
+    const Shader *sh = hasShader ? &currentShader->second : nullptr;
+    const bool hasPingPong = !VAOReadIndex.empty();
 
     std::deque<VertexBufferQueueEntry>::const_iterator vertexBufferQueueIter = vertexBufferQueue.begin();
     while (vertexBufferQueueIter != vertexBufferQueue.end()) {
       const VertexBufferQueueEntry *queueEntry = &(*vertexBufferQueueIter);
 
       vertexBuffer = queueEntry->vertexBuffer->GetResource();
-      if (currentBoundBuffer != vertexBuffer->GetVaoID()) {
+      int rawVaoID = vertexBuffer->GetVaoID();
+      if (currentBoundBuffer != rawVaoID) {
         bufferSwitches++;
 
-        int vaoID = vertexBuffer->GetVaoID();
-        int pingPongReadSwitch = 0;
-        std::map<int, int>::iterator pingPongIter = VAOReadIndex.find(vaoID);
-        if (pingPongIter != VAOReadIndex.end()) {
-          pingPongReadSwitch = pingPongIter->second;
-        }
-
-        if (pingPongReadSwitch == 1) {
-          std::map<int, int>::iterator pingPongIter = VAOPingPongMap.find(vaoID);
-          if (pingPongIter != VAOPingPongMap.end()) {
-            vaoID = pingPongIter->second;
+        int vaoID = rawVaoID;
+        if (hasPingPong) {
+          std::map<int, int>::iterator pingPongIter = VAOReadIndex.find(vaoID);
+          if (pingPongIter != VAOReadIndex.end() && pingPongIter->second == 1) {
+            std::map<int, int>::iterator vaoIter = VAOPingPongMap.find(vaoID);
+            if (vaoIter != VAOPingPongMap.end()) {
+              vaoID = vaoIter->second;
+            }
           }
         }
-
-/*
-        // block on VAO update
-        std::map<int, GLsync>::iterator syncIter = VAOfence.find(vaoID);
-        if (syncIter != VAOfence.end()) {
-          //glFlush();
-          //glWaitSync(syncIter->second, 0, GL_TIMEOUT_IGNORED);
-          GLenum returnVal = GL_WAIT_FAILED;
-          while (returnVal != GL_ALREADY_SIGNALED && returnVal != GL_CONDITION_SATISFIED) {
-            returnVal = glClientWaitSync(syncIter->second, GL_SYNC_FLUSH_COMMANDS_BIT, 1000000);
-            //returnVal = glClientWaitSync(syncIter->second, 0, 1000);
-            //if (returnVal == GL_TIMEOUT_EXPIRED) printf("TIMEOUT EXPIRED!\n");
-            assert(returnVal != GL_INVALID_VALUE);
-          }
-        }
-*/
 
         currentBoundBuffer = vaoID;
         mapping.glBindVertexArray(vaoID);
-        //glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vertexBuffer->GetElementID());
-/*
-        if (renderMode != e_RenderMode_GeometryOnly) {
-          if (renderMode == e_RenderMode_Full) {
-          }
-        }
-*/
-
       }
 
-      //glPushMatrix();
-
-      // slow, why?
       transform.Construct(queueEntry->position, Vector3(1, 1, 1), queueEntry->rotation);
-      //transform.Transpose();
-      //glMultMatrixf((float*)transform.elements);
-      SetMatrix("modelMatrix", transform);
+      if (sh && sh->loc_modelMatrix >= 0) {
+        mapping.glUniformMatrix4fv(sh->loc_modelMatrix, 1, true, (float*)transform.elements);
+      }
 
-      bool sequential = true; // buffer vertexbuffer chunks until a change happens (in texture or index, for example)
-      struct BufferChunk {
-        BufferChunk() {
-          startIndex = 0;
-          count = 0;
+      int wantSkinning = (queueEntry->hasSkinning && queueEntry->boneMatrices) ? 1 : 0;
+      if (wantSkinning != currentHasSkinning) {
+        if (sh && sh->loc_hasSkinning >= 0) {
+          mapping.glUniform1i(sh->loc_hasSkinning, wantSkinning);
         }
-        int startIndex;
-        int count;
-      };
-      BufferChunk bufferChunk;
+        currentHasSkinning = wantSkinning;
+      }
+      if (wantSkinning == 1 && sh && sh->loc_boneMatrices >= 0) {
+        mapping.glUniformMatrix4fv(sh->loc_boneMatrices, 16, true, queueEntry->boneMatrices->data());
+      }
 
-      std::deque<VertexBufferIndex>::const_iterator vertexBufferIter = queueEntry->vertexBufferIndices.begin();
-      while (vertexBufferIter != queueEntry->vertexBufferIndices.end()) {
+      if (queueEntry->vertexBufferIndices && !queueEntry->vertexBufferIndices->empty()) {
+        bool sequential = true;
+        struct BufferChunk {
+          int startIndex = 0;
+          int count = 0;
+        } bufferChunk;
 
-        //VertexBufferIndex *vbIndex = (*vertexBufferIter).get();
-        const VertexBufferIndex *vbIndex = &(*vertexBufferIter);
+        const std::vector<VertexBufferIndex> &indicesVec = *queueEntry->vertexBufferIndices;
+        const size_t numIndices = indicesVec.size();
+        for (size_t idx = 0; idx < numIndices; ++idx) {
+          const VertexBufferIndex *vbIndex = &indicesVec[idx];
 
-        if (renderMode != e_RenderMode_GeometryOnly) {
-          int diffuseTextureID = 0;
-          int normalTextureID = 0;
-          int specularTextureID = 0;
-          int illuminationTextureID = 0;
-          if (vbIndex->material.diffuseTexture) {
-            diffuseTextureID = vbIndex->material.diffuseTexture->GetResource()->GetID();
-          }
-
-          if (renderMode == e_RenderMode_Full) {
-            if (vbIndex->material.normalTexture) {
-              normalTextureID = vbIndex->material.normalTexture->GetResource()->GetID();
+          if (renderMode != e_RenderMode_GeometryOnly) {
+            int diffuseTextureID = 0;
+            int normalTextureID = 0;
+            int specularTextureID = 0;
+            int illuminationTextureID = 0;
+            if (vbIndex->material.diffuseTexture) {
+              diffuseTextureID = vbIndex->material.diffuseTexture->GetResource()->GetID();
             }
-            if (vbIndex->material.specularTexture) {
-              specularTextureID = vbIndex->material.specularTexture->GetResource()->GetID();
-            }
-            if (vbIndex->material.illuminationTexture) {
-              illuminationTextureID = vbIndex->material.illuminationTexture->GetResource()->GetID();
-            }
-          }
-
-          if (diffuseTextureID != currentDiffuseTextureID ||
-              normalTextureID != currentNormalTextureID ||
-              specularTextureID != currentSpecularTextureID ||
-              illuminationTextureID != currentIlluminationTextureID) {
-
-            if (sequential) {
-              DrawBufferChunk(bufferChunk.startIndex, bufferChunk.count);
-              sequential = false;
-            }
-
-            bool has_normal = false;
-            bool has_specular = false;
-            bool has_illumination = false;
-            if (normalTextureID != 0) has_normal = true;
-            if (specularTextureID != 0) has_specular = true;
-            if (illuminationTextureID != 0) has_illumination = true;
 
             if (renderMode == e_RenderMode_Full) {
-              if (has_normal && normalTextureID != currentNormalTextureID) {
-                SetTextureUnit(1);
-                mapping.glBindTexture(GL_TEXTURE_2D, normalTextureID);
+              if (vbIndex->material.normalTexture) {
+                normalTextureID = vbIndex->material.normalTexture->GetResource()->GetID();
               }
-              if (has_specular && specularTextureID != currentSpecularTextureID) {
-                SetTextureUnit(2);
-                mapping.glBindTexture(GL_TEXTURE_2D, specularTextureID);
+              if (vbIndex->material.specularTexture) {
+                specularTextureID = vbIndex->material.specularTexture->GetResource()->GetID();
               }
-              if (has_illumination && illuminationTextureID != currentIlluminationTextureID) {
-                SetTextureUnit(3);
-                mapping.glBindTexture(GL_TEXTURE_2D, illuminationTextureID);
+              if (vbIndex->material.illuminationTexture) {
+                illuminationTextureID = vbIndex->material.illuminationTexture->GetResource()->GetID();
               }
             }
 
-            SetTextureUnit(0);
-            mapping.glBindTexture(GL_TEXTURE_2D, diffuseTextureID);
+            if (diffuseTextureID != currentDiffuseTextureID ||
+                normalTextureID != currentNormalTextureID ||
+                specularTextureID != currentSpecularTextureID ||
+                illuminationTextureID != currentIlluminationTextureID) {
 
-            if (renderMode == e_RenderMode_Full) {
-              //SetUniformFloat("simple", "shininess", vbIndex->material.shininess * 60 + 1);
-              //SetUniformFloat("simple", "specular", vbIndex->material.specular_amount);
-              //SetUniformFloat("simple", "self_illumination", vbIndex->material.self_illumination.coords[0]);
-              //SetUniformFloat3("simple", "materialparams", vbIndex->material.shininess * 60 + 1, vbIndex->material.specular_amount, vbIndex->material.self_illumination.coords[0]);
-              SetUniformFloat3("simple", "materialparams", vbIndex->material.shininess, vbIndex->material.specular_amount, vbIndex->material.self_illumination.coords[0]);
+              if (sequential) {
+                DrawBufferChunk(bufferChunk.startIndex, bufferChunk.count);
+                sequential = false;
+              }
 
-              //SetUniformInt("simple", "has_normal", (int)has_normal);
-              //SetUniformInt("simple", "has_specular", (int)has_specular);
-              //SetUniformInt("simple", "has_illumination", (int)has_illumination);
-              SetUniformFloat3("simple", "materialbools", (int)has_normal, (int)has_specular, (int)has_illumination);
+              bool has_normal = (normalTextureID != 0);
+              bool has_specular = (specularTextureID != 0);
+              bool has_illumination = (illuminationTextureID != 0);
+
+              if (renderMode == e_RenderMode_Full) {
+                if (has_normal && normalTextureID != currentNormalTextureID) {
+                  SetTextureUnit(1);
+                  BindTexture(normalTextureID);
+                }
+                if (has_specular && specularTextureID != currentSpecularTextureID) {
+                  SetTextureUnit(2);
+                  BindTexture(specularTextureID);
+                }
+                if (has_illumination && illuminationTextureID != currentIlluminationTextureID) {
+                  SetTextureUnit(3);
+                  BindTexture(illuminationTextureID);
+                }
+              }
+
+              SetTextureUnit(0);
+              BindTexture(diffuseTextureID);
+
+              if (renderMode == e_RenderMode_Full && sh) {
+                if (sh->loc_materialParams >= 0) {
+                  mapping.glUniform3f(sh->loc_materialParams, vbIndex->material.shininess, vbIndex->material.specular_amount, vbIndex->material.self_illumination.coords[0]);
+                }
+                if (sh->loc_materialBools >= 0) {
+                  mapping.glUniform3f(sh->loc_materialBools, (float)(int)has_normal, (float)(int)has_specular, (float)(int)has_illumination);
+                }
+              }
+
+              currentDiffuseTextureID = diffuseTextureID;
+              currentNormalTextureID = normalTextureID;
+              currentSpecularTextureID = specularTextureID;
+              currentIlluminationTextureID = illuminationTextureID;
             }
+          } // if !GeometryOnly
 
-            currentDiffuseTextureID = diffuseTextureID;
-            currentNormalTextureID = normalTextureID;
-            currentSpecularTextureID = specularTextureID;
-            currentIlluminationTextureID = illuminationTextureID;
+          int start = vbIndex->startIndex;
+          int count = vbIndex->size;
+
+          if (sequential && bufferChunk.startIndex + bufferChunk.count != start) {
+            DrawBufferChunk(bufferChunk.startIndex, bufferChunk.count);
+            sequential = false;
           }
-        } // if !GeometryOnly
 
-        int start = vbIndex->startIndex;
-        int count = vbIndex->size;
+          if (sequential) {
+            bufferChunk.count += count;
+          } else {
+            bufferChunk.startIndex = start;
+            bufferChunk.count = count;
+            sequential = true;
+          }
 
-        //if (currentShader->first.compare("zphase") == 0) printf("drawing %i elements in zphase mode\n", count);
-
-        if (sequential) if (bufferChunk.startIndex + bufferChunk.count != start) {
-          DrawBufferChunk(bufferChunk.startIndex, bufferChunk.count);
-          sequential = false;
+          if (sequential && (idx + 1 == numIndices)) {
+            DrawBufferChunk(bufferChunk.startIndex, bufferChunk.count);
+            sequential = false;
+          }
         }
-
-        //if (sequential) if (vertexBufferIter + 1 == queueEntry->vertexBufferIndices.end()) sequential = false; // data end
-        if (sequential) {
-          // add to buffer
-          bufferChunk.count += count;
-        } else {
-          // reset buffer
-          bufferChunk.startIndex = start;
-          bufferChunk.count = count;
-          sequential = true;
-        }
-
-        vertexBufferIter++;
-
-        if (sequential) if (vertexBufferIter == queueEntry->vertexBufferIndices.end()) {
-          DrawBufferChunk(bufferChunk.startIndex, bufferChunk.count);
-          sequential = false;
-        }
-
       }
 
       vertexBufferQueueIter++;
     }
 
-    //printf("%i buffer switches\n", bufferSwitches);
+    if (currentHasSkinning == 1 && sh && sh->loc_hasSkinning >= 0) {
+      mapping.glUniform1i(sh->loc_hasSkinning, 0);
+    }
 
     if (renderMode != e_RenderMode_GeometryOnly) {
       if (renderMode == e_RenderMode_Full) {
         SetTextureUnit(1);
-        mapping.glBindTexture(GL_TEXTURE_2D, 0);
+        BindTexture(0);
         SetTextureUnit(2);
-        mapping.glBindTexture(GL_TEXTURE_2D, 0);
+        BindTexture(0);
         SetTextureUnit(3);
-        mapping.glBindTexture(GL_TEXTURE_2D, 0);
+        BindTexture(0);
       }
       SetTextureUnit(0);
-      mapping.glBindTexture(GL_TEXTURE_2D, 0);
+      BindTexture(0);
     }
 
     mapping.glBindVertexArray(0);
@@ -1367,6 +1437,10 @@ struct GLfunctions {
       mapping.glVertex3f(queueEntry->aabb.maxxyz.coords[0], queueEntry->aabb.maxxyz.coords[1], queueEntry->aabb.maxxyz.coords[2]);
 
       vertexBufferQueueIter++;
+    }
+
+    if (currentHasSkinning == 1) {
+      SetUniformInt(currentShader->first, "has_skinning", 0);
     }
 
     mapping.glEnd();
@@ -1462,6 +1536,8 @@ struct GLfunctions {
     switch (pixelFormat) {
 
       case e_PixelFormat_Alpha:          format = GL_ALPHA; break;
+      case e_PixelFormat_Red:            format = GL_RED; break;
+      case e_PixelFormat_RG:             format = GL_RG; break;
       case e_PixelFormat_RGB:            format = GL_RGB; break;
       case e_PixelFormat_RGBA:           format = GL_RGBA; break; // todo: BGRA preferred on windows?
       case e_PixelFormat_DepthComponent: format = GL_DEPTH_COMPONENT; break;
@@ -1479,6 +1555,8 @@ struct GLfunctions {
 
     switch (pixelFormat) {
 
+      case e_InternalPixelFormat_R8:        format = GL_R8; break;
+      case e_InternalPixelFormat_RG16F:     format = GL_RG16F; break;
       case e_InternalPixelFormat_RGB8:      format = GL_RGB8; break;
       case e_InternalPixelFormat_SRGB8:     format = GL_SRGB8; break;
       case e_InternalPixelFormat_RGB16:     format = GL_RGB16; break;
@@ -1502,12 +1580,6 @@ struct GLfunctions {
 
   int OpenGLRenderer3D::CreateTexture(e_InternalPixelFormat internalPixelFormat, e_PixelFormat pixelFormat, int width, int height, bool alpha, bool repeat, bool mipmaps, bool filter, bool multisample, bool compareDepth) {
 
-/*
-    if (pot(source->w) != source->w || pot(source->h) != source->h) {
-      Log(e_Warning, "OpenGLRenderer3D", "CreateTexture", "Non-power-of-2 texture!");
-    }
-*/
-
     GLuint texID;
     mapping.glGenTextures(1, &texID);
     BindTexture(texID);
@@ -1526,30 +1598,40 @@ struct GLfunctions {
     mapping.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (repeat) ? GL_REPEAT : GL_CLAMP_TO_EDGE);
     mapping.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter_min);
     mapping.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter_mag);
+
+    GLenum dataType = GL_UNSIGNED_BYTE;
+    if (internalPixelFormat == e_InternalPixelFormat_DepthComponent32F ||
+        internalPixelFormat == e_InternalPixelFormat_RG16F ||
+        internalPixelFormat == e_InternalPixelFormat_RGBA16F ||
+        internalPixelFormat == e_InternalPixelFormat_RGBA32F) {
+      dataType = GL_FLOAT;
+    } else if (internalPixelFormat == e_InternalPixelFormat_DepthComponent24 ||
+               internalPixelFormat == e_InternalPixelFormat_DepthComponent32) {
+      dataType = GL_UNSIGNED_INT;
+    } else if (internalPixelFormat == e_InternalPixelFormat_DepthComponent16) {
+      dataType = GL_UNSIGNED_SHORT;
+    }
+
     if (internalPixelFormat == e_InternalPixelFormat_DepthComponent16 ||
         internalPixelFormat == e_InternalPixelFormat_DepthComponent24 ||
         internalPixelFormat == e_InternalPixelFormat_DepthComponent32 ||
         internalPixelFormat == e_InternalPixelFormat_DepthComponent32F) {
-      //XXglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
       if (compareDepth) {
         mapping.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
         mapping.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+        mapping.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+        mapping.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+        const GLfloat borderColor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+        mapping.glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
       }
-//      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-//      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-      //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
-      //glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-      // Post-GLSL 1.3, DEPTH_TEXTURE_MODE is deprecated and GLSL behaves as if its always set to LUMINANCE
-      //glTexParameteri(GL_TEXTURE_2D, GL_DEPTH_TEXTURE_MODE, GL_INTENSITY);
-      //glTexParameteri(GL_TEXTURE_2D, GL_DEPTH_TEXTURE_MODE, GL_LUMINANCE);
     }
 
-    if (filter) {
+    if (filter && !compareDepth) {
       SetMaxAnisotropy();
     }
 
     if (!multisample) {
-      mapping.glTexImage2D(GL_TEXTURE_2D, 0, GetGLInternalPixelFormat(internalPixelFormat), width, height, 0, GetGLPixelFormat(pixelFormat), GL_UNSIGNED_BYTE, NULL);
+      mapping.glTexImage2D(GL_TEXTURE_2D, 0, GetGLInternalPixelFormat(internalPixelFormat), width, height, 0, GetGLPixelFormat(pixelFormat), dataType, NULL);
     } else {
       // todo: needs opengl 3.2 libs!
       //glTexImage2DMultiSample(GL_TEXTURE_2D_MULTISAMPLE_ARRAY, 5, GetGLInternalPixelFormat(internalPixelFormat), width, height, GL_TRUE);
@@ -1583,14 +1665,12 @@ struct GLfunctions {
 
     bool repeat = false;
     bool filter = true;
-    if (!mipmaps) filter = false; // <-- todo: hack
     GLint filter_min, filter_mag;
 
     if (filter == true) {
       filter_min = (mipmaps) ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR;
       filter_mag = GL_LINEAR;
-      //glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &largest_supported_anisotropy);
-      SetMaxAnisotropy();
+      if (mipmaps) SetMaxAnisotropy();
     } else {
       filter_min = (mipmaps) ? GL_NEAREST_MIPMAP_NEAREST : GL_NEAREST;
       filter_mag = GL_NEAREST;
@@ -1619,57 +1699,47 @@ struct GLfunctions {
   }
 
   void OpenGLRenderer3D::UpdateTexture(int textureID, SDL_Surface *source, bool alpha, bool mipmaps) {
+    BindTexture(textureID);
 
-    mapping.glBindTexture(GL_TEXTURE_2D, textureID);
-
-    GLint type1 = GL_RGBA8;
     GLint type2 = (alpha) ? GL_RGBA : GL_RGB;
 
-    int x = 0;
-    int y = 0;
-    int w = source->w;
-    int h = source->h;
+    SDL_LockSurface(source);
+    mapping.glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, source->w, source->h, type2, GL_UNSIGNED_BYTE,
+            source->pixels);
+    SDL_UnlockSurface(source);
 
-  SDL_LockSurface(source);
-  mapping.glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, w, h, type2, GL_UNSIGNED_BYTE,
-          source->pixels);
-  SDL_UnlockSurface(source);
-
-  if (mipmaps) {
-    mapping.glGenerateMipmap(GL_TEXTURE_2D);
-  }
-    GLint filter_min, filter_mag;
-
-    bool filter = true;
-
-    if (filter == true) {
-      filter_min = (mipmaps) ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR;
-      filter_mag = GL_LINEAR;
-      //glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &largest_supported_anisotropy);
+    if (mipmaps) {
+      mapping.glGenerateMipmap(GL_TEXTURE_2D);
       SetMaxAnisotropy();
-    } else {
-      filter_min = (mipmaps) ? GL_NEAREST_MIPMAP_NEAREST : GL_NEAREST;
-      filter_mag = GL_NEAREST;
+      mapping.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+      mapping.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     }
-
-    mapping.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter_min);
-    mapping.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter_mag);
 
     BindTexture(0);
   }
 
   void OpenGLRenderer3D::DeleteTexture(int textureID) {
+    for (int i = 0; i < 16; i++) {
+      if (_cache_boundTexture[i] == textureID) {
+        _cache_boundTexture[i] = -1;
+      }
+    }
     GLuint texID = textureID;
-    //printf("deleting tex id: %i\n", textureID);
     mapping.glDeleteTextures(1, &texID);
   }
 
   void OpenGLRenderer3D::CopyFrameBufferToTexture(int textureID, int width, int height) {
-    mapping.glBindTexture(GL_TEXTURE_2D, textureID);
+    BindTexture(textureID);
     mapping.glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
   }
 
   void OpenGLRenderer3D::BindTexture(int textureID) {
+    if (_cache_activeTextureUnit >= 0 && _cache_activeTextureUnit < 16) {
+      if (_cache_boundTexture[_cache_activeTextureUnit] == textureID) {
+        return;
+      }
+      _cache_boundTexture[_cache_activeTextureUnit] = textureID;
+    }
     mapping.glBindTexture(GL_TEXTURE_2D, (GLuint)textureID);
   }
 
@@ -1772,12 +1842,21 @@ struct GLfunctions {
 
   // render targets
 
-  void OpenGLRenderer3D::SetRenderTargets(std::vector<e_TargetAttachment> targetAttachments) {
-    std::vector<GLenum> targets(targetAttachments.size());
-    for (int i = 0; i < (signed int)targetAttachments.size(); i++) {
-      targets[i] = GetGLTargetAttachment(targetAttachments.at(i));
+  void OpenGLRenderer3D::SetRenderTargets(const std::vector<e_TargetAttachment> &targetAttachments) {
+    if (targetAttachments.empty()) return;
+    if (targetAttachments.size() <= 8) {
+      GLenum targets[8];
+      for (size_t i = 0; i < targetAttachments.size(); i++) {
+        targets[i] = GetGLTargetAttachment(targetAttachments[i]);
+      }
+      mapping.glDrawBuffers((GLsizei)targetAttachments.size(), targets);
+    } else {
+      std::vector<GLenum> targets(targetAttachments.size());
+      for (size_t i = 0; i < targetAttachments.size(); i++) {
+        targets[i] = GetGLTargetAttachment(targetAttachments[i]);
+      }
+      mapping.glDrawBuffers((GLsizei)targetAttachments.size(), targets.data());
     }
-    mapping.glDrawBuffers(targetAttachments.size(), &targets[0]);
   }
 
 
@@ -1803,6 +1882,63 @@ struct GLfunctions {
     width = context_width;
     height = context_height;
     bpp = context_bpp;
+  }
+
+  void OpenGLRenderer3D::GetDrawableSize(int &width, int &height) {
+    if (window) {
+      SDL_GL_GetDrawableSize(window, &width, &height);
+      if (width < 1) width = context_width;
+      if (height < 1) height = context_height;
+    } else {
+      width = context_width;
+      height = context_height;
+    }
+  }
+
+  void OpenGLRenderer3D::SetWindowMode(int width, int height, bool fullscreen) {
+    if (!window) return;
+    isFullscreen = fullscreen;
+    if (fullscreen) {
+      SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+    } else {
+      SDL_SetWindowFullscreen(window, 0);
+      if (width > 0 && height > 0) {
+        windowedWidth = width;
+        windowedHeight = height;
+        SDL_SetWindowSize(window, width, height);
+        SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+      }
+    }
+    RefreshAllViews();
+  }
+
+  bool OpenGLRenderer3D::IsFullscreen() const {
+    return isFullscreen;
+  }
+
+  void OpenGLRenderer3D::SetVSync(bool enabled) {
+    vsyncEnabled = enabled;
+    if (!context) return;
+    if (enabled) {
+      if (SDL_GL_SetSwapInterval(-1) == -1) {
+        SDL_GL_SetSwapInterval(1);
+      }
+    } else {
+      SDL_GL_SetSwapInterval(0);
+    }
+  }
+
+  bool OpenGLRenderer3D::GetVSync() const {
+    return vsyncEnabled;
+  }
+
+  void OpenGLRenderer3D::SetAntiAliasingMode(e_AntiAliasingMode mode) {
+    aaMode = mode;
+    RefreshAllViews();
+  }
+
+  e_AntiAliasingMode OpenGLRenderer3D::GetAntiAliasingMode() const {
+    return aaMode;
   }
 
   void OpenGLRenderer3D::SetPolygonOffset(float scale, float bias) {
@@ -1998,6 +2134,8 @@ struct GLfunctions {
 
     if (name == "zphase") {
       mapping.glBindAttribLocation(shader.programID, 0, "position");
+      mapping.glBindAttribLocation(shader.programID, 5, "boneIndices");
+      mapping.glBindAttribLocation(shader.programID, 6, "boneWeights");
       mapping.glBindFragDataLocation(shader.programID, 0, "stdout");
     }
     if (name == "simple") {
@@ -2006,6 +2144,8 @@ struct GLfunctions {
       mapping.glBindAttribLocation(shader.programID, 2, "texcoord");
       mapping.glBindAttribLocation(shader.programID, 3, "tangent");
       mapping.glBindAttribLocation(shader.programID, 4, "bitangent");
+      mapping.glBindAttribLocation(shader.programID, 5, "boneIndices");
+      mapping.glBindAttribLocation(shader.programID, 6, "boneWeights");
       mapping.glBindFragDataLocation(shader.programID, 0, "stdout0");
       mapping.glBindFragDataLocation(shader.programID, 1, "stdout1");
       mapping.glBindFragDataLocation(shader.programID, 2, "stdout2");
@@ -2016,23 +2156,59 @@ struct GLfunctions {
     }
     if (name == "lighting") {
       mapping.glBindFragDataLocation(shader.programID, 0, "stdout0");
-      mapping.glBindFragDataLocation(shader.programID, 1, "stdout1");
     }
     if (name == "postprocess") {
       mapping.glBindAttribLocation(shader.programID, 0, "position");
       mapping.glBindFragDataLocation(shader.programID, 0, "stdout");
     }
-  if (name == "overlay") {
-    mapping.glBindAttribLocation(shader.programID, 0, "vertex");
-    mapping.glBindFragDataLocation(shader.programID, 0, "stdout");
-  }
+    if (name == "aa") {
+      mapping.glBindAttribLocation(shader.programID, 0, "position");
+      mapping.glBindFragDataLocation(shader.programID, 0, "stdout");
+    }
+    if (name == "overlay") {
+      mapping.glBindAttribLocation(shader.programID, 0, "vertex");
+      mapping.glBindFragDataLocation(shader.programID, 0, "stdout");
+    }
 
     mapping.glLinkProgram(shader.programID);
 
     mapping.glUseProgram(shader.programID);
 
-    GLint location;
+    Shader &linkedShader = shaders[name];
+    auto lookupOpt = [&](const char *uName) -> int {
+      int loc = mapping.glGetUniformLocation(linkedShader.programID, uName);
+      linkedShader.uniformLocations[uName] = loc;
+      return loc;
+    };
+    linkedShader.loc_projectionMatrix = lookupOpt("projectionMatrix");
+    linkedShader.loc_viewMatrix = lookupOpt("viewMatrix");
+    linkedShader.loc_modelMatrix = lookupOpt("modelMatrix");
+    linkedShader.loc_orthoProjectionMatrix = lookupOpt("orthoProjectionMatrix");
+    linkedShader.loc_orthoViewMatrix = lookupOpt("orthoViewMatrix");
+    linkedShader.loc_projection = lookupOpt("projection");
+    linkedShader.loc_model = lookupOpt("model");
+    linkedShader.loc_hasSkinning = lookupOpt("has_skinning");
+    linkedShader.loc_boneMatrices = mapping.glGetUniformLocation(linkedShader.programID, "boneMatrices");
+    if (linkedShader.loc_boneMatrices == -1) {
+      linkedShader.loc_boneMatrices = mapping.glGetUniformLocation(linkedShader.programID, "boneMatrices[0]");
+    }
+    linkedShader.uniformLocations["boneMatrices"] = linkedShader.loc_boneMatrices;
+    linkedShader.loc_materialParams = lookupOpt("materialparams");
+    linkedShader.loc_materialBools = lookupOpt("materialbools");
+    linkedShader.loc_cameraPosition = lookupOpt("cameraPosition");
+    linkedShader.loc_hasShadow = lookupOpt("has_shadow");
+    linkedShader.loc_lightViewProjectionMatrix = lookupOpt("lightViewProjectionMatrix");
+    linkedShader.loc_lightColor = lookupOpt("lightColor");
+    linkedShader.loc_lightRadius = lookupOpt("lightRadius");
+    linkedShader.loc_lightPosition = lookupOpt("lightPosition");
+
+    currentShader = shaders.find(name);
+
+    if (name == "zphase") {
+      SetUniformInt("zphase", "has_skinning", 0);
+    }
     if (name == "simple") {
+      SetUniformInt("simple", "has_skinning", 0);
       SetUniformInt("simple", "map_albedo", 0);
       SetUniformInt("simple", "map_normal", 1);
       SetUniformInt("simple", "map_specular", 2);
@@ -2041,7 +2217,7 @@ struct GLfunctions {
     if (name == "ambient") {
       SetUniformInt("ambient", "map_albedo", 0);
       SetUniformInt("ambient", "map_normal", 1);
-      SetUniformInt("ambient", "map_depth", 2); // recently swapped with aux
+      SetUniformInt("ambient", "map_depth", 2);
       SetUniformInt("ambient", "map_aux", 3);
       SetUniformInt("ambient", "map_noise", 4);
 
@@ -2051,18 +2227,14 @@ struct GLfunctions {
       SetUniformFloat("ambient", "contextHeight", (float)context_height);
 
       unsigned int kernelSize = 32;
-      //SetUniformInt("ambient", "SSAO_kernelSize", kernelSize);
       std::vector<float> SSAO_kernel(kernelSize * 3);
       GeneratePoissonKernel(&SSAO_kernel[0], kernelSize);
       SetUniformFloat3Array("ambient", "SSAO_kernel", kernelSize, &SSAO_kernel[0]);
     }
     if (name == "lighting") {
-      // on (at least older) nvidia cards, we can't 'skip' id's, or so it seems. so make them consecutive
-      // edit ^ not sure after all if that is the case
       SetUniformInt("lighting", "map_albedo", 0);
       SetUniformInt("lighting", "map_normal", 1);
-      SetUniformInt("lighting", "map_depth", 2); // was: 3
-      //SetUniformInt("lighting", "map_aux", 3); // was: 2
+      SetUniformInt("lighting", "map_depth", 2);
       SetUniformInt("lighting", "map_shadow", 7);
 
       SetUniformFloat("lighting", "contextX", (float)0.0);
@@ -2080,6 +2252,17 @@ struct GLfunctions {
       SetUniformFloat("postprocess", "contextWidth", (float)context_width);
       SetUniformFloat("postprocess", "contextHeight", (float)context_height);
     }
+    if (name == "aa") {
+      SetUniformInt("aa", "map_postprocess", 0);
+      SetUniformInt("aa", "map_modifier", 1);
+
+      SetUniformFloat("aa", "contextX", (float)0.0);
+      SetUniformFloat("aa", "contextY", (float)0.0);
+      SetUniformFloat("aa", "contextWidth", (float)context_width);
+      SetUniformFloat("aa", "contextHeight", (float)context_height);
+      SetUniformFloat2("aa", "sourceTexelSize", 1.0f / (float)std::max(1, context_width), 1.0f / (float)std::max(1, context_height));
+      SetUniformInt("aa", "aaMode", (int)aaMode);
+    }
 
     SetTextureUnit(0);
 
@@ -2095,128 +2278,95 @@ struct GLfunctions {
   }
 
   void OpenGLRenderer3D::UseShader(const std::string &name) {
+    if (name.empty()) {
+      currentShader = shaders.end();
+      mapping.glUseProgram(0);
+      return;
+    }
+    if (currentShader != shaders.end() && currentShader->first == name) {
+      return;
+    }
     std::map<std::string, Shader>::iterator shaderIter = shaders.find(name);
     if (shaderIter != shaders.end()) {
-
       currentShader = shaderIter;
-
       mapping.glUseProgram((*shaderIter).second.programID);
     } else {
+      currentShader = shaders.end();
       mapping.glUseProgram(0);
     }
   }
 
-  void OpenGLRenderer3D::SetUniformInt(const std::string &shaderName, const std::string &varName, int value) {
-    std::map<std::string, Shader>::iterator shaderIter = shaders.find(shaderName);
-    assert(shaderIter != shaders.end());
-
-    std::map<std::string, GLint>::iterator iter = uniformCache.find(shaderName + "_var_" + varName);
-    GLint location;
-    if (iter != uniformCache.end()) {
-      location = iter->second;
-    } else {
-      location = mapping.glGetUniformLocation((*shaderIter).second.programID, varName.c_str());
-      if (location == -1) Log(e_Error, "OpenGLRenderer3D", "SetUniformInt", "Uniform location for shader '" + shaderName + "' not found: " + varName);
-      uniformCache.insert(std::pair<std::string, GLint>(shaderName + "_var_" + varName, location));
+  int OpenGLRenderer3D::ResolveUniformLocation(Shader &shader, const std::string &varName, bool allowArrayElemZero) {
+    auto iter = shader.uniformLocations.find(varName);
+    if (iter != shader.uniformLocations.end()) {
+      return iter->second;
     }
-    mapping.glUniform1i(location, value);
+    GLint location = mapping.glGetUniformLocation(shader.programID, varName.c_str());
+    if (location == -1 && allowArrayElemZero) {
+      std::string elemZero = varName + "[0]";
+      location = mapping.glGetUniformLocation(shader.programID, elemZero.c_str());
+    }
+    if (location == -1) {
+      Log(e_Error, "OpenGLRenderer3D", "ResolveUniformLocation", "Uniform location for shader '" + shader.name + "' not found: " + varName);
+    }
+    shader.uniformLocations.emplace(varName, location);
+    return location;
+  }
+
+  void OpenGLRenderer3D::SetUniformInt(const std::string &shaderName, const std::string &varName, int value) {
+    auto shaderIter = (currentShader != shaders.end() && currentShader->first == shaderName) ? currentShader : shaders.find(shaderName);
+    assert(shaderIter != shaders.end());
+    GLint location = ResolveUniformLocation(shaderIter->second, varName);
+    if (location != -1) mapping.glUniform1i(location, value);
   }
 
   void OpenGLRenderer3D::SetUniformInt3(const std::string &shaderName, const std::string &varName, int value1, int value2, int value3) {
-    std::map<std::string, Shader>::iterator shaderIter = shaders.find(shaderName);
+    auto shaderIter = (currentShader != shaders.end() && currentShader->first == shaderName) ? currentShader : shaders.find(shaderName);
     assert(shaderIter != shaders.end());
-
-    std::map<std::string, GLint>::iterator iter = uniformCache.find(shaderName + "_var_" + varName);
-    GLint location;
-    if (iter != uniformCache.end()) {
-      location = iter->second;
-    } else {
-      location = mapping.glGetUniformLocation((*shaderIter).second.programID, varName.c_str());
-      if (location == -1) Log(e_Error, "OpenGLRenderer3D", "SetUniformInt3", "Uniform location for shader '" + shaderName + "' not found: " + varName);
-      uniformCache.insert(std::pair<std::string, GLint>(shaderName + "_var_" + varName, location));
-    }
-    mapping.glUniform3i(location, value1, value2, value3);
+    GLint location = ResolveUniformLocation(shaderIter->second, varName);
+    if (location != -1) mapping.glUniform3i(location, value1, value2, value3);
   }
 
   void OpenGLRenderer3D::SetUniformFloat(const std::string &shaderName, const std::string &varName, float value) {
-    std::map<std::string, Shader>::iterator shaderIter = shaders.find(shaderName);
+    auto shaderIter = (currentShader != shaders.end() && currentShader->first == shaderName) ? currentShader : shaders.find(shaderName);
     assert(shaderIter != shaders.end());
-
-    std::map<std::string, GLint>::iterator iter = uniformCache.find(shaderName + "_var_" + varName);
-    GLint location;
-    if (iter != uniformCache.end()) {
-      location = iter->second;
-    } else {
-      location = mapping.glGetUniformLocation((*shaderIter).second.programID, varName.c_str());
-      if (location == -1) Log(e_Error, "OpenGLRenderer3D", "SetUniformFloat", "Uniform location for shader '" + shaderName + "' not found: " + varName);
-      uniformCache.insert(std::pair<std::string, GLint>(shaderName + "_var_" + varName, location));
-    }
-    mapping.glUniform1f(location, value);
+    GLint location = ResolveUniformLocation(shaderIter->second, varName);
+    if (location != -1) mapping.glUniform1f(location, value);
   }
 
   void OpenGLRenderer3D::SetUniformFloat2(const std::string &shaderName, const std::string &varName, float value1, float value2) {
-    std::map<std::string, Shader>::iterator shaderIter = shaders.find(shaderName);
+    auto shaderIter = (currentShader != shaders.end() && currentShader->first == shaderName) ? currentShader : shaders.find(shaderName);
     assert(shaderIter != shaders.end());
-
-    std::map<std::string, GLint>::iterator iter = uniformCache.find(shaderName + "_var_" + varName);
-    GLint location;
-    if (iter != uniformCache.end()) {
-      location = iter->second;
-    } else {
-      location = mapping.glGetUniformLocation((*shaderIter).second.programID, varName.c_str());
-      if (location == -1) Log(e_Error, "OpenGLRenderer3D", "SetUniformFloat2", "Uniform location for shader '" + shaderName + "' not found: " + varName);
-      uniformCache.insert(std::pair<std::string, GLint>(shaderName + "_var_" + varName, location));
-    }
-    mapping.glUniform2f(location, value1, value2);
+    GLint location = ResolveUniformLocation(shaderIter->second, varName);
+    if (location != -1) mapping.glUniform2f(location, value1, value2);
   }
 
   void OpenGLRenderer3D::SetUniformFloat3(const std::string &shaderName, const std::string &varName, float value1, float value2, float value3) {
-    std::map<std::string, Shader>::iterator shaderIter = shaders.find(shaderName);
+    auto shaderIter = (currentShader != shaders.end() && currentShader->first == shaderName) ? currentShader : shaders.find(shaderName);
     assert(shaderIter != shaders.end());
-
-    std::map<std::string, GLint>::iterator iter = uniformCache.find(shaderName + "_var_" + varName);
-    GLint location;
-    if (iter != uniformCache.end()) {
-      location = iter->second;
-    } else {
-      location = mapping.glGetUniformLocation((*shaderIter).second.programID, varName.c_str());
-      if (location == -1) Log(e_Error, "OpenGLRenderer3D", "SetUniformFloat3", "Uniform location for shader '" + shaderName + "' not found: " + varName);
-      uniformCache.insert(std::pair<std::string, GLint>(shaderName + "_var_" + varName, location));
-    }
-    mapping.glUniform3f(location, value1, value2, value3);
+    GLint location = ResolveUniformLocation(shaderIter->second, varName);
+    if (location != -1) mapping.glUniform3f(location, value1, value2, value3);
   }
 
   void OpenGLRenderer3D::SetUniformFloat3Array(const std::string &shaderName, const std::string &varName, int count, float *values) {
-    std::map<std::string, Shader>::iterator shaderIter = shaders.find(shaderName);
+    auto shaderIter = (currentShader != shaders.end() && currentShader->first == shaderName) ? currentShader : shaders.find(shaderName);
     assert(shaderIter != shaders.end());
-
-    std::map<std::string, GLint>::iterator iter = uniformCache.find(shaderName + "_var_" + varName);
-    GLint location;
-    if (iter != uniformCache.end()) {
-      location = iter->second;
-    } else {
-      location = mapping.glGetUniformLocation((*shaderIter).second.programID, varName.c_str());
-      if (location == -1) Log(e_Error, "OpenGLRenderer3D", "SetUniformFloat3Array", "Uniform location for shader '" + shaderName + "' not found: " + varName);
-      uniformCache.insert(std::pair<std::string, GLint>(shaderName + "_var_" + varName, location));
-    }
-    mapping.glUniform3fv(location, count, values);
+    GLint location = ResolveUniformLocation(shaderIter->second, varName);
+    if (location != -1) mapping.glUniform3fv(location, count, values);
   }
 
   void OpenGLRenderer3D::SetUniformMatrix4(const std::string &shaderName, const std::string &varName, const Matrix4 &mat) {
-    std::map<std::string, Shader>::iterator shaderIter = shaders.find(shaderName);
+    auto shaderIter = (currentShader != shaders.end() && currentShader->first == shaderName) ? currentShader : shaders.find(shaderName);
     assert(shaderIter != shaders.end());
+    GLint location = ResolveUniformLocation(shaderIter->second, varName);
+    if (location != -1) mapping.glUniformMatrix4fv(location, 1, true, (float*)mat.elements);
+  }
 
-    std::map<std::string, GLint>::iterator iter = uniformCache.find(shaderName + "_var_" + varName);
-    GLint location;
-    if (iter != uniformCache.end()) {
-      location = iter->second;
-    } else {
-      location = mapping.glGetUniformLocation((*shaderIter).second.programID, varName.c_str());
-      if (location == -1) Log(e_Error, "OpenGLRenderer3D", "SetUniformMatrix4", "Uniform location for shader '" + shaderName + "' not found: " + varName);
-      uniformCache.insert(std::pair<std::string, GLint>(shaderName + "_var_" + varName, location));
-    }
-    //mapping.glUniformMatrix4fv(location, 1, false, (float*)mat.GetTransposed().elements);
-    mapping.glUniformMatrix4fv(location, 1, true, (float*)mat.elements); // true == transposed
+  void OpenGLRenderer3D::SetUniformMatrix4Array(const std::string &shaderName, const std::string &varName, int count, const float *values) {
+    auto shaderIter = (currentShader != shaders.end() && currentShader->first == shaderName) ? currentShader : shaders.find(shaderName);
+    assert(shaderIter != shaders.end());
+    GLint location = ResolveUniformLocation(shaderIter->second, varName, true);
+    if (location != -1) mapping.glUniformMatrix4fv(location, count, true, values);
   }
 
   void OpenGLRenderer3D::HDRCaptureOverallBrightness() {
@@ -2245,10 +2395,15 @@ struct GLfunctions {
   }
 
 
-  // thread main loop
+  // main-thread OpenGL lifecycle
 
-  void OpenGLRenderer3D::operator()() {
-    Log(e_Notice, "OpenGLRenderer3D", "operator()()", "Starting OpenGLRenderer3D thread");
+  void OpenGLRenderer3D::InitMainThread() {
+    Log(e_Notice, "OpenGLRenderer3D", "InitMainThread", "Initializing OpenGLRenderer3D on Main Thread");
+
+#ifdef WIN32
+    SetProcessDPIAware();
+#endif
+    SDL_SetHint(SDL_HINT_VIDEO_HIGHDPI_DISABLED, "0");
 
     SDL_Init(SDL_INIT_VIDEO);
 
@@ -2260,22 +2415,25 @@ struct GLfunctions {
       printf("IMG_Init: %s\n", IMG_GetError());
     }
 
-    SDL_Event event;
+    messageQueue.EnableInlineExecutionOnCurrentThread(this);
+  }
 
+  void OpenGLRenderer3D::RunMainLoop() {
+    Log(e_Notice, "OpenGLRenderer3D", "RunMainLoop", "Entering OpenGLRenderer3D Main Thread event/render loop");
+
+    SDL_Event event;
     bool quit = false;
     while (!quit) {
-
-      // process messages
-
       while (SDL_PollEvent(&event)) {
-
-        // context losing/gaining focus
         if (event.type == SDL_WINDOWEVENT) {
           if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
             contextIsActive = false;
-          }
-          else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
+          } else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
             contextIsActive = true;
+          } else if (event.window.event == SDL_WINDOWEVENT_RESIZED && !isFullscreen) {
+            windowedWidth = event.window.data1;
+            windowedHeight = event.window.data2;
+            RefreshAllViews();
           }
         }
 
@@ -2284,44 +2442,70 @@ struct GLfunctions {
             EnvironmentManager::GetInstance().SignalQuit();
             break;
           case SDL_KEYDOWN:
-            switch(event.key.keysym.sym) {
-              case SDLK_F12:
-                EnvironmentManager::GetInstance().SignalQuit();
-                break;
-              default:
-                break;
+            if (event.key.keysym.sym == SDLK_F12) {
+              EnvironmentManager::GetInstance().SignalQuit();
+            } else if (event.key.repeat == 0 &&
+                       (event.key.keysym.sym == SDLK_F11 ||
+                        ((event.key.keysym.sym == SDLK_RETURN || event.key.keysym.sym == SDLK_KP_ENTER) &&
+                         (event.key.keysym.mod & KMOD_ALT)))) {
+              SetWindowMode(windowedWidth, windowedHeight, !isFullscreen);
+              continue;
             }
             break;
           default:
             break;
         }
 
-        if (contextIsActive) { // context must be active
+        if (contextIsActive) {
           UserEventManager::GetInstance().InputSDLEvent(event);
         }
-
       }
 
-      // todo: manual joy handling? see joy init in usereventmanager
-      // SDL_JoystickUpdate();
-
-      bool isMessage;
-      boost::intrusive_ptr<Command> message = messageQueue.WaitForMessage(isMessage, 1);
+      bool isMessage = false;
+      intrusive_ptr<Command> message = messageQueue.WaitForMessage(isMessage, 4);
       if (isMessage) {
         if (!message->Handle(this)) quit = true;
         message.reset();
+        for (int burst = 0; burst < 128 && !quit; burst++) {
+          bool hasMore = false;
+          intrusive_ptr<Command> nextMsg = messageQueue.GetMessage(hasMore);
+          if (!hasMore) break;
+          if (!nextMsg->Handle(this)) quit = true;
+          nextMsg.reset();
+        }
       }
-
     }
+
+    Log(e_Notice, "OpenGLRenderer3D", "RunMainLoop", "Exited OpenGLRenderer3D Main Thread event/render loop");
+  }
+
+  void OpenGLRenderer3D::ShutdownMainThread() {
+    Log(e_Notice, "OpenGLRenderer3D", "ShutdownMainThread", "Shutting down OpenGLRenderer3D on Main Thread");
+
+    // Drain any remaining commands on the main thread before tearing down GL context
+    for (;;) {
+      bool hasMsg = false;
+      intrusive_ptr<Command> msg = messageQueue.GetMessage(hasMsg);
+      if (!hasMsg) break;
+      if (msg) msg->Handle(this);
+    }
+
+    messageQueue.DisableInlineExecution();
 
     Exit();
 
     IMG_Quit();
     SDL_QuitSubSystem(SDL_INIT_VIDEO);
 
-    Log(e_Notice, "OpenGLRenderer3D", "operator()()", "Shutting down OpenGLRenderer3D thread");
+    if (messageQueue.GetPending() > 0) {
+      Log(e_Error, "OpenGLRenderer3D", "ShutdownMainThread", int_to_str(messageQueue.GetPending()) + " messages left on quit!");
+    }
+  }
 
-    if (messageQueue.GetPending() > 0) Log(e_Error, "OpenGLRenderer3D", "operator()()", int_to_str(messageQueue.GetPending()) + " messages left on quit!");
+  void OpenGLRenderer3D::operator()() {
+    InitMainThread();
+    RunMainLoop();
+    ShutdownMainThread();
   }
 
 }

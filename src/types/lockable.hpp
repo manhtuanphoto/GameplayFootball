@@ -22,16 +22,13 @@ namespace blunted {
       Lockable() {}
 
       T GetData() const {
-        mutex.lock();
-        T tmp = data;
-        mutex.unlock();
-        return tmp;
+        std::lock_guard<std::mutex> lock(mutex);
+        return data;
       }
 
       void SetData(const T &newdata) {
-        mutex.lock();
+        std::lock_guard<std::mutex> lock(mutex);
         this->data = newdata;
-        mutex.unlock();
       }
 
       inline T operator=(const T &param) {
@@ -43,19 +40,21 @@ namespace blunted {
         return &data;
       }
 
-      inline void Lock() {
+      inline const T *operator->() const {
+        return &data;
+      }
+
+      inline void Lock() const {
         mutex.lock();
       }
 
-      inline void Unlock() {
+      inline void Unlock() const {
         mutex.unlock();
       }
 
       T data;
 
-      mutable boost::mutex mutex;
-
-    protected:
+      mutable std::mutex mutex;
 
   };
 

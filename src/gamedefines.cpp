@@ -9,9 +9,17 @@
 
 #include "main.hpp"
 
+#include <filesystem>
+
 struct index3 { int index[3]; };
 
 void GetVertexColors(std::map<Vector3, Vector3> &colorCoords) {
+
+  std::error_code ec;
+  if (std::filesystem::exists("media/objects/players/models/fullbody.glb", ec) ||
+      std::filesystem::exists("media/objects/players/models/fullbody.gltf", ec)) {
+    return;
+  }
 
   if (Verbose()) printf("loading vertex colors.. ");
 

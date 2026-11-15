@@ -25,7 +25,7 @@ Gui2TacticsDebug::Gui2TacticsDebug(Gui2WindowManager *windowManager, const std::
 Gui2TacticsDebug::~Gui2TacticsDebug() {
 }
 
-void Gui2TacticsDebug::GetImages(std::vector < boost::intrusive_ptr<Image2D> > &target) {
+void Gui2TacticsDebug::GetImages(std::vector < blunted::intrusive_ptr<Image2D> > &target) {
   target.push_back(image);
   Gui2View::GetImages(target);
 }

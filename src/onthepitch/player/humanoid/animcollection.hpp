@@ -170,17 +170,17 @@ struct Quadrant {
   radian angle;
 };
 
-void FillNodeMap(boost::intrusive_ptr<Node> targetNode, std::map < const std::string, boost::intrusive_ptr<Node> > &nodeMap);
+void FillNodeMap(blunted::intrusive_ptr<Node> targetNode, std::map < const std::string, blunted::intrusive_ptr<Node> > &nodeMap);
 
 class AnimCollection {
 
   public:
     // scene3D for debugging pilon
-    AnimCollection(boost::shared_ptr<Scene3D> scene3D);
+    AnimCollection(std::shared_ptr<Scene3D> scene3D);
     virtual ~AnimCollection();
 
     void Clear();
-    void Load(boost::filesystem::path directory);
+    void Load(std::filesystem::path directory);
 
     const std::vector < Animation* > &GetAnimations() const;
 
@@ -198,13 +198,14 @@ class AnimCollection {
 
   protected:
 
-    void _PrepareAnim(Animation *animation, boost::intrusive_ptr<Node> playerNode, const std::list < boost::intrusive_ptr<Object> > &bodyParts, const std::map < const std::string, boost::intrusive_ptr<Node> > &nodeMap, bool convertAngledDribbleToWalk = false);
+    void _PrepareAnim(Animation *animation, blunted::intrusive_ptr<Node> playerNode, const std::list < blunted::intrusive_ptr<Object> > &bodyParts, const std::map < const std::string, blunted::intrusive_ptr<Node> > &nodeMap, bool convertAngledDribbleToWalk = false);
 
     bool _CheckFunctionType(const std::string &functionType, e_FunctionType queryFunctionType) const;
 
-    boost::shared_ptr<Scene3D> scene3D;
+    std::shared_ptr<Scene3D> scene3D;
 
     std::vector<Animation*> animations;
+    std::vector<int> animIndicesByFunctionType[16];
     std::vector<Quadrant> quadrants;
 
     std::string defString[e_DefString_Size];

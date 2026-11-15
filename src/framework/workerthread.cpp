@@ -44,21 +44,10 @@ namespace blunted {
     while (!quit) {
 
       // check mailbox
-      boost::intrusive_ptr<Command> message = taskManager->WaitForWork();
-
-      // need to set thread state and command name at the same time
-      LockState();
-      SetState_NoLock(e_ThreadState_Busy);
-      currentCommandName.SetData(message->GetName());
-      UnlockState();
+      blunted::intrusive_ptr<Command> message = taskManager->WaitForWork();
 
       if (!message->Handle(this)) quit = true;
       message.reset();
-
-      LockState();
-      SetState_NoLock(e_ThreadState_Idle);
-      currentCommandName.SetData("");
-      UnlockState();
 
       messagesHandled++;
     }

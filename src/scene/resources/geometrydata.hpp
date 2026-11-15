@@ -30,6 +30,7 @@ namespace blunted {
     */
 
     std::vector<unsigned int> indices;
+    std::vector<float> skinData; // 8 floats per vertex: 4 bone indices + 4 bone weights
   };
 
   class GeometryData {

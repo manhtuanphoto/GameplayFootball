@@ -9,6 +9,7 @@
 #include "playerbase.hpp"
 
 #include "utils/gui2/widgets/caption.hpp"
+#include "utils/gui2/widgets/image.hpp"
 
 #include "../../menu/menutask.hpp"
 
@@ -36,7 +37,7 @@ class Player : public PlayerBase {
     Team *GetTeam();
 
     // get ready for some action
-    virtual void Activate(boost::intrusive_ptr<Node> humanoidSourceNode, boost::intrusive_ptr<Node> fullbodySourceNode, std::map<Vector3, Vector3> &colorCoords, boost::intrusive_ptr < Resource<Surface> > kit, boost::shared_ptr<AnimCollection> animCollection);
+    virtual void Activate(blunted::intrusive_ptr<Node> humanoidSourceNode, blunted::intrusive_ptr<Node> fullbodySourceNode, std::map<Vector3, Vector3> &colorCoords, blunted::intrusive_ptr < Resource<Surface> > kit, std::shared_ptr<AnimCollection> animCollection);
     // go back to bench/take a shower
     virtual void Deactivate();
 
@@ -118,6 +119,7 @@ class Player : public PlayerBase {
 
     bool buf_nameCaptionShowCondition;
     bool buf_debugCaptionShowCondition;
+    bool buf_cursorShowCondition;
     std::string buf_nameCaption;
     std::string buf_debugCaption;
     Vector3 buf_nameCaptionPos;
@@ -127,17 +129,20 @@ class Player : public PlayerBase {
 
     bool fetchedbuf_nameCaptionShowCondition;
     bool fetchedbuf_debugCaptionShowCondition;
+    bool fetchedbuf_cursorShowCondition;
     std::string fetchedbuf_nameCaption;
     std::string fetchedbuf_debugCaption;
     Vector3 fetchedbuf_nameCaptionPos;
     Vector3 fetchedbuf_debugCaptionPos;
     Vector3 fetchedbuf_playerColor;
     Vector3 fetchedbuf_debugCaptionColor;
+    Vector3 lastRenderedCursorColor;
 
     Gui2Caption *nameCaption;
     Gui2Caption *debugCaption;
+    Gui2Image *cursorImg;
 
-    boost::shared_ptr<MenuTask> menuTask;
+    std::shared_ptr<MenuTask> menuTask;
 
     int desiredTimeToBall_ms;
     Vector3 idealMovement;

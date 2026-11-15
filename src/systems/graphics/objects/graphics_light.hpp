@@ -24,7 +24,7 @@ namespace blunted {
       GraphicsLight(GraphicsScene *graphicsScene);
       virtual ~GraphicsLight();
 
-      virtual boost::intrusive_ptr<Interpreter> GetInterpreter(e_ObjectType objectType);
+      virtual blunted::intrusive_ptr<Interpreter> GetInterpreter(e_ObjectType objectType);
 
       virtual void SetPosition(const Vector3 &newPosition);
       virtual Vector3 GetPosition() const;
@@ -64,8 +64,9 @@ namespace blunted {
       virtual void SetShadow(bool shadow);
       virtual bool GetShadow();
       virtual void OnSpatialChange(const Vector3 &position, const Quaternion &rotation);
-      virtual void EnqueueShadowMap(boost::intrusive_ptr<Camera> camera, std::deque < boost::intrusive_ptr<Geometry> > visibleGeometry);
+      virtual void EnqueueShadowMap(blunted::intrusive_ptr<Camera> camera, std::deque < blunted::intrusive_ptr<Geometry> > visibleGeometry);
       virtual ShadowMap GetShadowMap(const std::string &camName);
+      const ShadowMap *FindShadowMap(const std::string &camName) const;
       virtual void OnPoke();
 
     protected:

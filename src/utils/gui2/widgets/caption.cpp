@@ -27,7 +27,7 @@ namespace blunted {
   Gui2Caption::~Gui2Caption() {
   }
 
-  void Gui2Caption::GetImages(std::vector < boost::intrusive_ptr<Image2D> > &target) {
+  void Gui2Caption::GetImages(std::vector < blunted::intrusive_ptr<Image2D> > &target) {
     target.push_back(image);
     Gui2View::GetImages(target);
   }
@@ -79,18 +79,19 @@ namespace blunted {
     SDL_FreeSurface(textOutlineSurfTmp);
     SDL_FreeSurface(textSurfTmp);
 
-    textWidth_percent = windowManager->GetWidthPercent(resW * zoomy);
+    int targetW = std::max(1, int(std::ceil(resW * zoomy)));
+    int targetH = std::max(1, h);
+    textWidth_percent = windowManager->GetWidthPercent(targetW);
 
-    image->DrawRectangle(0, 0, w, h, Vector3(0, 0, 0), 0);
-
-    if (resW * zoomy > int(image->GetSize().coords[0]) || resH * zoomy > int(image->GetSize().coords[1])) { // todo: also when smaller, maybe?
-      image->Resize(resW * zoomy, resH * zoomy);
-      //printf("RESIZING\n");
-      width_percent = windowManager->GetWidthPercent(resW * zoomy);
-      height_percent = windowManager->GetHeightPercent(resH * zoomy);
+    Vector3 imgSize = image->GetSize();
+    if (targetW > int(imgSize.coords[0]) || targetH > int(imgSize.coords[1])) {
+      int newW = std::max(targetW, int(imgSize.coords[0]));
+      int newH = std::max(targetH, int(imgSize.coords[1]));
+      image->Resize(newW, newH);
+      width_percent = windowManager->GetWidthPercent(newW);
     }
 
-    boost::intrusive_ptr < Resource<Surface> > surfaceRes = image->GetImage();
+    blunted::intrusive_ptr < Resource<Surface> > surfaceRes = image->GetImage();
     surfaceRes->resourceMutex.lock();
     SDL_Surface *surface = surfaceRes->GetResource()->GetData();
 
@@ -122,14 +123,18 @@ namespace blunted {
 
     std::string adaptedCaption = newCaption;
     if (adaptedCaption.compare("") == 0) adaptedCaption = " ";
+    std::transform(adaptedCaption.begin(), adaptedCaption.end(), adaptedCaption.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
     if (caption.compare(adaptedCaption) != 0) {
       caption = adaptedCaption;
-      std::transform(caption.begin(), caption.end(), caption.begin(), ::toupper);
       Redraw();
     }
   }
 
   float Gui2Caption::GetTextWidthPercent(int subStrLength) {
+    if (subStrLength >= (int)caption.length()) {
+      return textWidth_percent;
+    }
     int x, y, w, h;
     windowManager->GetCoordinates(x_percent, y_percent, width_percent, height_percent, x, y, w, h);
 

@@ -35,8 +35,8 @@ namespace blunted {
     float buttonWidth = 16;
     Gui2Button *posButton = new Gui2Button(windowManager, name + "_" + posName + "_button", width_percent / 2.0 - buttonWidth - 0.5, height_percent - 4, buttonWidth, 3, posName);
     Gui2Button *negButton = new Gui2Button(windowManager, name + "_" + negName + "_button", width_percent / 2.0 + 0.5, height_percent - 4, buttonWidth, 3, negName);
-    posButton->sig_OnClick.connect(boost::bind(boost::ref(Gui2Dialog::sig_OnPositive), this));
-    negButton->sig_OnClick.connect(boost::bind(boost::ref(Gui2Dialog::sig_OnNegative), this));
+    posButton->sig_OnClick.connect(blunted::Bind(std::ref(Gui2Dialog::sig_OnPositive), this));
+    negButton->sig_OnClick.connect(blunted::Bind(std::ref(Gui2Dialog::sig_OnNegative), this));
     this->AddView(posButton);
     this->AddView(negButton);
     return posButton;
@@ -45,7 +45,7 @@ namespace blunted {
   Gui2Button *Gui2Dialog::AddSingleButton(const std::string &caption) {
     float buttonWidth = 20;
     Gui2Button *theButton = new Gui2Button(windowManager, name + "_" + caption + "_button", width_percent / 2.0 - buttonWidth / 2.0, height_percent - 4, buttonWidth, 3, caption);
-    theButton->sig_OnClick.connect(boost::bind(boost::ref(Gui2Dialog::sig_OnPositive), this));
+    theButton->sig_OnClick.connect(blunted::Bind(std::ref(Gui2Dialog::sig_OnPositive), this));
     this->AddView(theButton);
     return theButton;
   }

@@ -18,15 +18,15 @@
 
 #include "../main.hpp"
 
-Ball::Ball(Match *match) : match(match) {
+Ball::Ball(Match *match) : ballPosHistory(ballHistorySize_ms), match(match) {
 
-  bounce = 0.62f; // 1 = full bounce, 0 = no bounce
-  linearBounce = 0.06f; // bigger = more brake force
-  drag = 0.015f;//previously 0.025f; // bigger = more
-  friction = 0.04f; // bigger = more
-  linearFriction = 1.6f; // bigger = more, arbitrary scale
+  bounce = 0.58f; // natural grass restitution (1 = full bounce, 0 = no bounce)
+  linearBounce = 0.055f; // settle micro-bounces cleanly on turf
+  drag = 0.0142f; // aerodynamic air drag
+  friction = 0.036f; // quadratic grass drag for crisp zip on initial pass
+  linearFriction = 1.42f; // smooth rolling deceleration on grass
   gravity = -9.81f;
-  grassHeight = 0.025f;
+  grassHeight = 0.026f;
 
   ballTouchesNet = false;
 
@@ -38,7 +38,7 @@ Ball::Ball(Match *match) : match(match) {
   ballNode = loader.LoadObject(scene3D, "media/objects/balls/generic.object");
   match->GetDynamicNode()->AddNode(ballNode);
 
-  std::list < boost::intrusive_ptr<Geometry> > children;
+  std::list < blunted::intrusive_ptr<Geometry> > children;
   ballNode->GetObjects<Geometry>(e_ObjectType_Geometry, children);
   ball = (*children.begin());
 
@@ -48,8 +48,8 @@ Ball::Ball(Match *match) : match(match) {
 
   // ball sound
 
-  boost::intrusive_ptr < Resource<SoundBuffer> > soundBufferRes = ResourceManagerPool::GetInstance().GetManager<SoundBuffer>(e_ResourceType_SoundBuffer)->Fetch("media/sounds/ballsound.wav", true, true);
-  sound = boost::static_pointer_cast<Sound>(ObjectFactory::GetInstance().CreateObject("ballsound", e_ObjectType_Sound));
+  blunted::intrusive_ptr < Resource<SoundBuffer> > soundBufferRes = ResourceManagerPool::GetInstance().GetManager<SoundBuffer>(e_ResourceType_SoundBuffer)->Fetch("media/sounds/ballsound.wav", true, true);
+  sound = blunted::static_pointer_cast<Sound>(ObjectFactory::GetInstance().CreateObject("ballsound", e_ObjectType_Sound));
   scene3D->CreateSystemObjects(sound);
   sound->SetSoundBuffer(soundBufferRes);
   sound->SetGain(0.7f * GetConfiguration()->GetReal("audio_volume", 0.5f));
@@ -60,7 +60,7 @@ Ball::Ball(Match *match) : match(match) {
   // goal post sound
 
   soundBufferRes = ResourceManagerPool::GetInstance().GetManager<SoundBuffer>(e_ResourceType_SoundBuffer)->Fetch("media/sounds/goalpost.wav", true, true);
-  goalpostsound = boost::static_pointer_cast<Sound>(ObjectFactory::GetInstance().CreateObject("goalpostsound", e_ObjectType_Sound));
+  goalpostsound = blunted::static_pointer_cast<Sound>(ObjectFactory::GetInstance().CreateObject("goalpostsound", e_ObjectType_Sound));
   scene3D->CreateSystemObjects(goalpostsound);
   goalpostsound->SetSoundBuffer(soundBufferRes);
   goalpostsound->SetGain(0.7f * GetConfiguration()->GetReal("audio_volume", 0.5f));
@@ -92,10 +92,8 @@ void Ball::Touch(const Vector3 &target) {
 
   if (positionBuffer.coords[2] < 0.11f) positionBuffer.coords[2] = 0.11f;
 
+  // SetMomentum already recalculates predictions
   SetMomentum(target);
-
-  // recalculate prediction
-  CalculatePrediction();
   match->UpdateLatestMentalImageBallPredictions();
 
   match->GetTeam(0)->UpdatePossessionStats();
@@ -164,6 +162,13 @@ BallSpatialInfo Ball::CalculatePrediction() {
 
   ballTouchesNet = false;
 
+  const float powFactor = 2.6f;
+  const float powerFac = 1.8f;
+  const float postAbsorbInv = 0.8f;
+  const float ballRadius = 0.11f;
+  const float postRadius = 0.07f;
+  const float netAbsorbInv = std::pow(0.95f, timeStep * 100.0f);
+
   for (unsigned int predictTime_ms = int(timeStep * 1000.0f); predictTime_ms < ballPredictionSize_ms; predictTime_ms += int(timeStep * 1000.0f)) {
 
     float frictionFactor = 0.0f;
@@ -179,17 +184,15 @@ BallSpatialInfo Ball::CalculatePrediction() {
 
     float momentumVelo = momentumPredict.GetLength();
     float momentumVeloDragged =
-        momentumVelo - drag * std::pow(momentumVelo, 2.0f) * timeStep;
+        std::max(0.0f, momentumVelo - drag * (momentumVelo * momentumVelo) * timeStep);
     if (drag_enabled) momentumPredict = momentumPredict.GetNormalized(0) * momentumVeloDragged;
 
 
     float ballBottom = nextPos.coords[2] - 0.11f;
     float grassInfluenceBias = clamp(1.0f - (ballBottom / grassHeight), 0.0f, 1.0f); // 0 == no friction, 1 == all friction
-    // todo: seems to cause 'feedback' on multibump (1st bump: ball gets lots of rotation. second bump: rotation makes ball accelerate too much)
     grassInfluenceBias = std::pow(
         grassInfluenceBias, 0.7f);  // at half grass height, there's already a
                                     // bigger amount of friction than 50%
-    //printf("%f\n", bias);
 
 
     // bounce
@@ -210,12 +213,10 @@ BallSpatialInfo Ball::CalculatePrediction() {
     if (nextPos.coords[2] < 0.11f + grassHeight && groundFriction_enabled) {
       float adaptedFriction = (friction * grassInfluenceBias);
 
-      // v(t) = v(0) * (k ^ t)
-
       Vector3 xy = momentumPredict.Get2D();
       float velo = xy.GetLength();
 
-      float newVelo = velo - adaptedFriction * std::pow(velo, 2.0f) * timeStep;
+      float newVelo = velo - adaptedFriction * (velo * velo) * timeStep;
 
       // linear friction
       newVelo = clamp(newVelo - (linearFriction * grassInfluenceBias * timeStep), 0.0f, 100000.0f);
@@ -225,15 +226,6 @@ BallSpatialInfo Ball::CalculatePrediction() {
       momentumPredict.coords[0] = xy.coords[0];
       momentumPredict.coords[1] = xy.coords[1];
     }
-
-    float netAbsorbInv = 0.95f;
-    float powFactor = 2.6f;
-    float powerFac = 1.8f; // lol varnames
-    float postAbsorbInv = 0.8f;
-    float ballRadius = 0.11f;
-    float postRadius = 0.07f;
-
-    netAbsorbInv = std::pow(netAbsorbInv, timeStep * 100.0f);
 
     // woodwork
 
@@ -462,14 +454,14 @@ BallSpatialInfo Ball::CalculatePrediction() {
       ballRotationMomentum.coords[0] = y * radius * 1000.0f;// * bias;
       ballRotationMomentum.coords[1] = x * radius * 1000.0f;// * bias;
 
-      // mix (not sure if mathematically correct, i think so, but maybe check out on a rainy sunday once)
-      float rotBias = 0.01f; // lower == ball is lighter. higher == pitch/ball contact seems more 'rubbery'
+      // mix spin with turf contact (backspin checks up, topspin skids forward)
+      float rotBias = 0.013f;
       rotBias *= grassInfluenceBias;
 
       // ball slams into ground; see origin of frictionFactor variable for more clarity. this happens only once per bounce
       // this works here because the 'if' statement is always true when frictionFactor > 0, because when then happens, nextPos.coords[2] has been set to ballRadius anyway
       if (frictionFactor > 0.0f) {
-        rotBias += 0.5f * frictionFactor;
+        rotBias += 0.54f * frictionFactor;
       }
       rotBias = clamp(rotBias, 0.0f, 1.0f);
       momentumPredict.coords[0] = momentumPredict.coords[0] * (1.0f - rotBias) + ballRotationMomentum.coords[0] * rotBias;
@@ -478,24 +470,25 @@ BallSpatialInfo Ball::CalculatePrediction() {
 
       // finally, add the previously calculated ground friction induced rotation
       rotationPredict_ms = newRotationPredict_ms;
+    } else if (drag_enabled) {
+      // Subtle aerodynamic spin damping while airborne so long balls curve then settle naturally
+      rotationPredict_ms = rotationPredict_ms.GetRotationMultipliedBy(1.0f - 0.16f * timeStep);
     }
 
 
-    // magnus effect (swerve)
+    // magnus effect (3D swerve + topspin dip + backspin lift)
 
     if (swerve_enabled) {
       Vector3 rotVec;
       rotationPredict_ms.GetAngles(rotVec.coords[0], rotVec.coords[1], rotVec.coords[2]);
       rotVec *= 10.0f;
 
-      // magnus effect has a strength curve that goes down after a certain velocity
-      float swerveAmount = NormalizedClamp(momentumPredict.GetLength(), 0.0f, 70.0f);
-      // http://www.wolframalpha.com/input/?i=sin%28x+*+pi+*+0.7%29+^+2.2+from+x+%3D+0+to+1
-      // <bazkie_drunk> ^ tnx, past myself, that's very convenient!
-      swerveAmount = pow(std::sin(swerveAmount * pi * 0.94f), 2.6f);
-      Vector3 adaptedMomentumPredict = momentumPredict.GetNormalized(0) * swerveAmount * 30.0f;
+      // magnus effect Reynolds curve across realistic football speeds
+      float swerveAmount = NormalizedClamp(momentumPredict.GetLength(), 0.0f, 68.0f);
+      swerveAmount = std::pow(std::sin(swerveAmount * pi * 0.92f), 2.1f);
+      Vector3 adaptedMomentumPredict = momentumPredict.GetNormalized(0) * swerveAmount * 32.0f;
 
-      Vector3 swerve = adaptedMomentumPredict.GetCrossProduct(-rotVec) * 1.0;
+      Vector3 swerve = adaptedMomentumPredict.GetCrossProduct(-rotVec);
 
       momentumPredict += swerve * timeStep;
     }
@@ -505,20 +498,21 @@ BallSpatialInfo Ball::CalculatePrediction() {
 
     nextPos += momentumPredict * timeStep;
 
-    Vector3 rotationVector;
-    rotationPredict_ms.GetAngles(rotationVector.coords[0], rotationVector.coords[1], rotationVector.coords[2]);
-    rotationVector *= timeStep / 0.001f;
-    Quaternion rotationPredictTimeStepped;
-    rotationPredictTimeStepped.SetAngles(rotationVector.coords[0], rotationVector.coords[1], rotationVector.coords[2]);
+    if (predictTime_ms == 10) {
+      Vector3 rotationVector;
+      rotationPredict_ms.GetAngles(rotationVector.coords[0], rotationVector.coords[1], rotationVector.coords[2]);
+      rotationVector *= timeStep / 0.001f;
+      Quaternion rotationPredictTimeStepped;
+      rotationPredictTimeStepped.SetAngles(rotationVector.coords[0], rotationVector.coords[1], rotationVector.coords[2]);
 
-    nextOrientation = rotationPredictTimeStepped * nextOrientation;
+      nextOrientation = rotationPredictTimeStepped * nextOrientation;
+    }
 
     if (predictTime_ms % 10 == 0) {
 
       if (autoDegrade_timeStep) {
         if (predictTime_ms == 100) timeStep = 0.005f;
         if (predictTime_ms == 200) timeStep = 0.01f;
-        //if (predictTime_ms == 2000) timeStep = 0.04f; can't go above 0.01f, would leave open spaces in array
       }
 
       predictions[predictTime_ms / 10] = nextPos;
@@ -537,14 +531,13 @@ BallSpatialInfo Ball::CalculatePrediction() {
 }
 
 Vector3 Ball::GetAveragePosition(unsigned int duration_ms) const {
-  std::list<Vector3>::const_reverse_iterator iter = ballPosHistory.rbegin();
+  const std::size_t histSize = ballPosHistory.size();
   unsigned int total = 0;
   Vector3 averageVec;
-  while (iter != ballPosHistory.rend()) {
-    averageVec += *iter;
+  for (std::size_t idx = histSize; idx > 0; --idx) {
+    averageVec += ballPosHistory[idx - 1];
     total++;
     if (total * 10 > duration_ms) break;
-    iter++;
   }
   if (total > 0) averageVec /= total; else averageVec = Predict(0);
   return averageVec;
@@ -576,7 +569,6 @@ void Ball::Process() {
   orientationBuffer = orientPrediction;
 
   ballPosHistory.push_back(positionBuffer);
-  if (ballPosHistory.size() > ballHistorySize_ms) ballPosHistory.pop_front();
 
   Vector3 changedMomentum = momentum - previousMomentum;
 

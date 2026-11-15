@@ -6,41 +6,43 @@
 #define _HPP_REFCOUNTED
 
 #include "defines.hpp"
-
-#include <boost/detail/atomic_count.hpp>
-#ifdef WIN32
-#include <boost/detail/interlocked.hpp>
-#endif
+#include <atomic>
+#include <cassert>
 
 namespace blunted {
 
   class RefCounted {
 
     public:
-      RefCounted();
+      RefCounted() : refCount(0) {}
       virtual ~RefCounted();
 
-      RefCounted(const RefCounted &src);
-      RefCounted& operator=(const RefCounted &src);
+      RefCounted(const RefCounted &) : refCount(0) {}
+      RefCounted& operator=(const RefCounted &) { return *this; }
 
-      unsigned long GetRefCount();
-
-    protected:
+      inline unsigned long GetRefCount() const noexcept {
+        return static_cast<unsigned long>(refCount.load(std::memory_order_relaxed));
+      }
 
     private:
-      volatile long refCount;
+      std::atomic<long> refCount;
 
-#ifndef WIN32
-      boost::mutex refCountMutex;
-#endif
-
-      friend void intrusive_ptr_add_ref(RefCounted *p);
-      friend void intrusive_ptr_release(RefCounted *p);
+      friend inline void intrusive_ptr_add_ref(RefCounted *p) noexcept;
+      friend inline void intrusive_ptr_release(RefCounted *p) noexcept;
 
   };
 
-  void intrusive_ptr_add_ref(RefCounted *p);
-  void intrusive_ptr_release(RefCounted *p);
+  inline void intrusive_ptr_add_ref(RefCounted *p) noexcept {
+    assert(p);
+    p->refCount.fetch_add(1, std::memory_order_relaxed);
+  }
+
+  inline void intrusive_ptr_release(RefCounted *p) noexcept {
+    assert(p);
+    if (p->refCount.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+      delete p;
+    }
+  }
 
 }
 

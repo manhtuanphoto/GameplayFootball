@@ -47,59 +47,35 @@ vec3 ContrastSaturationBrightness(vec3 color, float brt, float con, float sat) {
   return conColor;
 }
 
-float GetEdge(vec2 pos) {
-  vec2 offsets[9];
-  offsets[0] = vec2(0.0, 0.0);
-  offsets[1] = vec2(-1.0 / (contextWidth * 0.001), -1.0 / (contextHeight * 0.001)); // round the clock ;)
-  offsets[2] = vec2(0.0, -1.0 / (contextHeight * 0.001));
-  offsets[3] = vec2(1.0 / (contextWidth * 0.001), -1.0 / (contextHeight * 0.001));
-  offsets[4] = vec2(1.0 / (contextWidth * 0.001), 0.0);
-  offsets[5] = vec2(1.0 / (contextWidth * 0.001), 1.0 / (contextHeight * 0.001));
-  offsets[6] = vec2(0.0, 1.0 / (contextHeight * 0.001));
-  offsets[7] = vec2(-1.0 / (contextWidth * 0.001), 1.0 / (contextHeight * 0.001));
-  offsets[8] = vec2(-1.0 / (contextWidth * 0.001), 0.0);
+float GetEdge(vec2 pos, float centerRawDepth, vec3 centerRawNormal) {
+  vec2 invRes = vec2(1.0 / contextWidth, 1.0 / contextHeight);
 
-  float depths[9];
-  vec3 normals[9];
-  for (int i = 0; i < 9; i++) {
-    float depth = texture2D(map_depth, pos + offsets[i] * 0.001).x;
-    depths[i] = cameraClip.y / (depth - cameraClip.x);
-    normals[i] = texture2D(map_normal, pos + offsets[i] * 0.001).xyz;
-  }
+  float centerLinearDepth = cameraClip.y / (centerRawDepth - cameraClip.x);
 
-  vec4 deltas1;
-  vec4 deltas2;
-  deltas1.x = depths[1];
-  deltas1.y = depths[2];
-  deltas1.z = depths[3];
-  deltas1.w = depths[4];
-  deltas2.x = depths[5];
-  deltas2.y = depths[6];
-  deltas2.z = depths[7];
-  deltas2.w = depths[8];
+  vec2 uvN = pos + vec2(0.0, -invRes.y);
+  vec2 uvE = pos + vec2(invRes.x, 0.0);
+  vec2 uvS = pos + vec2(0.0, invRes.y);
+  vec2 uvW = pos + vec2(-invRes.x, 0.0);
 
-  deltas1 = abs(deltas1 - depths[0]);
-  deltas2 = abs(depths[0] - deltas2);
+  float dN = cameraClip.y / (texture2D(map_depth, uvN).x - cameraClip.x);
+  float dE = cameraClip.y / (texture2D(map_depth, uvE).x - cameraClip.x);
+  float dS = cameraClip.y / (texture2D(map_depth, uvS).x - cameraClip.x);
+  float dW = cameraClip.y / (texture2D(map_depth, uvW).x - cameraClip.x);
 
-  vec4 minDeltas = max(min(deltas1, deltas2), 0.00001);
-  vec4 maxDeltas = max(deltas1, deltas2);
+  vec2 delta1 = abs(vec2(dN, dE) - centerLinearDepth);
+  vec2 delta2 = abs(centerLinearDepth - vec2(dS, dW));
+  vec2 minDeltas = max(min(delta1, delta2), vec2(0.00001));
+  vec2 maxDeltas = max(delta1, delta2);
+  vec2 depthResults = step(minDeltas * 30.0, maxDeltas);
 
-  vec4 depthResults = step(minDeltas * 35.0, maxDeltas);
+  vec2 n1 = vec2(dot(texture2D(map_normal, uvN).xyz, centerRawNormal),
+                 dot(texture2D(map_normal, uvE).xyz, centerRawNormal));
+  vec2 n2 = vec2(dot(texture2D(map_normal, uvS).xyz, centerRawNormal),
+                 dot(texture2D(map_normal, uvW).xyz, centerRawNormal));
+  vec2 normalResults = step(vec2(0.45), abs(n1 - n2));
 
-  deltas1.x = dot(normals[1], normals[0]);
-  deltas1.y = dot(normals[2], normals[0]);
-  deltas1.z = dot(normals[3], normals[0]);
-  deltas1.w = dot(normals[4], normals[0]);
-  deltas2.x = dot(normals[5], normals[0]);
-  deltas2.y = dot(normals[6], normals[0]);
-  deltas2.z = dot(normals[7], normals[0]);
-  deltas2.w = dot(normals[8], normals[0]);
-  deltas1 = abs(deltas1 - deltas2);
-
-  vec4 normalResults = step(0.5, deltas1);
-  vec4 results = max(normalResults, depthResults);
-
-  return (results.x + results.y + results.z + results.w) * 0.25;
+  vec2 results = max(normalResults, depthResults);
+  return (results.x + results.y) * 0.5;
 }
 
 vec3 GetWorldPosition(vec2 texCoord, float depth) {
@@ -118,30 +94,43 @@ void main(void) {
   texCoord.y /= contextHeight;
 
   float depth = texture2D(map_depth, texCoord).x;
+  vec3 rawNormal = texture2D(map_normal, texCoord).xyz;
+
+  if (depth >= 0.9995f) {
+    stdout0 = vec4(0.0f, 0.0f, 0.0f, 1.0f);
+    stdout1 = vec4(GetEdge(texCoord, depth, rawNormal), 1.0f, 0.0f, 0.0f);
+    return;
+  }
 
   vec3 worldPosition = GetWorldPosition(texCoord, depth);
 
   vec3 base = texture2D(map_albedo, texCoord).xyz;
+  vec3 normal = normalize(rawNormal);
 
-  float brightness = 0.15f;//0.25f;
+  // Natural stadium hemisphere ambient: cool sky dome from above + subtle warm emerald turf bounce from below
+  float hemi = clamp(normal.z * 0.5f + 0.5f, 0.0f, 1.0f);
+  vec3 skyAmbient = vec3(0.84f, 0.94f, 1.14f);
+  vec3 groundBounce = vec3(0.56f, 0.72f, 0.52f);
+  vec3 hemiLight = mix(groundBounce, skyAmbient, hemi);
 
-  // blueish tint + brightness
-  vec3 baseDesaturated = vec3((base.r + base.g + base.b) / 3);
-  base = baseDesaturated * 0.7 + base * 0.3;
-  base *= vec3(0.9f, 1.0f, 1.2f) * brightness;
+  // Retain 85% natural albedo saturation in shadow instead of washing out to grey
+  float luma = dot(base, vec3(0.2126f, 0.7152f, 0.0722f));
+  vec3 richBase = mix(vec3(luma), base, 0.85f);
+  float ambientStrength = 0.22f;
+  vec3 ambientColor = richBase * hemiLight * ambientStrength;
 
   // screen space ambient occlusion
   // normal-oriented hemisphere method, (c) john chapman
   // http://john-chapman-graphics.blogspot.nl/2013/01/ssao-tutorial.html
 
   vec2 noiseScale = vec2(contextWidth / 4.0f, contextHeight / 4.0f);
-  float SSAO_radius = 0.18f;//0.12f;
+  float SSAO_radius = 0.22f;
+  float SSAO_bias = 0.025f;
 
-  vec3 normal = texture2D(map_normal, texCoord).xyz;
   float SSAO = 0.0;
 
   vec3 viewPosition = vec3(viewMatrix * vec4(worldPosition, 1.0f));
-  vec3 viewNormal = vec3(viewMatrix * vec4(normal, 0.0f));
+  vec3 viewNormal = normalize(vec3(viewMatrix * vec4(normal, 0.0f)));
 
   vec3 randomVec = -texture2D(map_noise, texCoord * noiseScale).xyz * 2.0f - 1.0f;
   vec3 tangent = normalize(randomVec - viewNormal * dot(randomVec, viewNormal));
@@ -149,48 +138,30 @@ void main(void) {
   mat3 tbn = mat3(tangent, bitangent, viewNormal);
 
   for (int i = 0; i < SSAO_kernelSize; ++i) {
+    vec3 samplePos = tbn * SSAO_kernel[i];
+    samplePos = viewPosition + samplePos * SSAO_radius;
 
-    // get sample position in viewspace coords
-    vec3 sample = tbn * SSAO_kernel[i];
-    sample = viewPosition + sample * SSAO_radius;
-    // sample.z darkens in the distance
-    //test += sample / (SSAO_kernelSize * 1.0f);
-
-    // sample position to projection space
-    vec4 offset = projectionMatrix * vec4(sample, 1.0f);
+    vec4 offset = projectionMatrix * vec4(samplePos, 1.0f);
     offset.xy /= offset.w;
     offset.xy = offset.xy * 0.5f + 0.5f;
 
     float sampleDepth = texture(map_depth, offset.xy).x;
-    // convert from non-linear [0..1] to linear [near .. far]
     sampleDepth = cameraClip.y / (sampleDepth - cameraClip.x);
 
-    // falloff after radius
-    //float rangeCheckFalloff = abs(-viewPosition.z - sampleDepth) < SSAO_radius ? 1.0f : 0.0f;
-    float rangeCheckFalloff = clamp((SSAO_radius - abs(-viewPosition.z - sampleDepth) * 0.5f) / SSAO_radius, 0.0f, 1.0f); // gradual falloff version. * 0.4f == don't fall off all too gracefully; pow would be better (but slower!)
-    // if actual fragment's depth is behind sample position, do not count
-    float rangeCheckInside = sampleDepth < -sample.z ? 1.0f : 0.0f;
+    float rangeCheckFalloff = clamp((SSAO_radius - abs(-viewPosition.z - sampleDepth) * 0.5f) / SSAO_radius, 0.0f, 1.0f);
+    float rangeCheckInside = (sampleDepth < (-samplePos.z - SSAO_bias)) ? 1.0f : 0.0f;
 
     SSAO += rangeCheckFalloff * rangeCheckInside;
   }
-  SSAO /= SSAO_kernelSize * 1.0f;
-  SSAO = 1.0f - SSAO;
-  //SSAO = SSAO * 2.0f - 1.0f; // exaggerate effect
-  SSAO = SSAO * 1.5f - 0.5f; // exaggerate effect
-  //SSAO *= SSAO; // exaggerate effect
-  SSAO = clamp(SSAO, 0.0f, 1.0f);
-  //SSAO = 1; //disable
+  SSAO /= float(SSAO_kernelSize);
+  SSAO = clamp(1.0f - SSAO * 1.15f, 0.0f, 1.0f);
 
+  // self-illumination (stored in R8 channel)
+  float self_illumination = texture2D(map_aux, texCoord.st).r;
 
-  // self-illumination
+  vec3 fragColor = clamp(ambientColor + base * self_illumination, 0.0f, 1.0f);
 
-  vec4 aux = texture2D(map_aux, texCoord.st);
-  float self_illumination = aux.w;
-
-  vec3 fragColor = vec3(clamp(base * (1.0 + self_illumination), 0.0, 1.0));
-
-  //stdout0 = vec4(vec3(depth / 2.0f), 1.0);
-  stdout0 = vec4(fragColor * SSAO, 1.0);
-  stdout1.r = GetEdge(texCoord); // AA
-  stdout1.g = SSAO;
+  // Output clean un-occluded ambient to accumulation buffer; blurred SSAO is applied once in postprocess.frag
+  stdout0 = vec4(fragColor, 1.0f);
+  stdout1 = vec4(GetEdge(texCoord, depth, rawNormal), SSAO, 0.0f, 0.0f);
 }

@@ -16,7 +16,7 @@ namespace blunted {
   class Loader {
 
     public:
-      virtual void Load(std::string filename, boost::intrusive_ptr < Resource<T> > resource) = 0;
+      virtual void Load(std::string filename, blunted::intrusive_ptr < Resource<T> > resource) = 0;
 
     protected:
 

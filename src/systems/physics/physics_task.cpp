@@ -37,7 +37,7 @@ namespace blunted {
 
     // the actual, per frame system task
     while (!quit) {
-      boost::intrusive_ptr<Command> message(messageQueue.WaitForMessage());
+      blunted::intrusive_ptr<Command> message(messageQueue.WaitForMessage());
       assert(message.get());
       SetState(e_ThreadState_Busy);
       if (!message->Handle(this)) quit = true;
@@ -66,7 +66,7 @@ namespace blunted {
     previousTime_ms = time_ms;
     //printf("%i\n", timeDiff_ms);
 
-    boost::intrusive_ptr<PhysicsTaskCommand_StepTime> stepTime(new PhysicsTaskCommand_StepTime(physicsSystem->GetPhysicsWrapper(), timeDiff_ms + remainder_ms, timeStep_ms));
+    blunted::intrusive_ptr<PhysicsTaskCommand_StepTime> stepTime(new PhysicsTaskCommand_StepTime(physicsSystem->GetPhysicsWrapper(), timeDiff_ms + remainder_ms, timeStep_ms));
     taskManager->EnqueueWork(stepTime, true);
     stepTime->Wait();
     remainder_ms = stepTime->remainder_ms;
@@ -76,7 +76,7 @@ namespace blunted {
     TaskManager *taskManager = TaskManager::GetInstancePtr();
 
     // update positions/rotations etcetera
-    boost::intrusive_ptr<PhysicsTaskCommand_UpdateGeometry> updateGeometry(new PhysicsTaskCommand_UpdateGeometry());
+    blunted::intrusive_ptr<PhysicsTaskCommand_UpdateGeometry> updateGeometry(new PhysicsTaskCommand_UpdateGeometry());
     taskManager->EnqueueWork(updateGeometry, true);
     updateGeometry->Wait();
   }
@@ -91,7 +91,7 @@ namespace blunted {
   bool PhysicsTaskCommand_UpdateGeometry::Execute(void *caller) {
     bool success;
     int i = 1;
-    boost::shared_ptr<IScene> scene = SceneManager::GetInstance().GetScene(i, success);
+    std::shared_ptr<IScene> scene = SceneManager::GetInstance().GetScene(i, success);
     while (success) {
       scene->PokeObjects(e_ObjectType_Geometry, e_SystemType_Physics);
       scene->PokeObjects(e_ObjectType_Joint, e_SystemType_Physics);

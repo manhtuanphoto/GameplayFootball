@@ -147,7 +147,7 @@ namespace blunted {
 
     bool quit = false;
     while (!quit) {
-      boost::intrusive_ptr<Command> message = messageQueue.WaitForMessage();
+      blunted::intrusive_ptr<Command> message = messageQueue.WaitForMessage();
       if (!message->Handle(this)) quit = true;
       message.reset();
     }

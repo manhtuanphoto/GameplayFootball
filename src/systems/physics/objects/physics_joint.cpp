@@ -18,13 +18,13 @@ namespace blunted {
   PhysicsJoint::~PhysicsJoint() {
   }
 
-  boost::intrusive_ptr<Interpreter> PhysicsJoint::GetInterpreter(e_ObjectType objectType) {
+  blunted::intrusive_ptr<Interpreter> PhysicsJoint::GetInterpreter(e_ObjectType objectType) {
     if (objectType == e_ObjectType_Joint) {
-      boost::intrusive_ptr<PhysicsJoint_JointInterpreter> jointInterpreter(new PhysicsJoint_JointInterpreter(this));
+      blunted::intrusive_ptr<PhysicsJoint_JointInterpreter> jointInterpreter(new PhysicsJoint_JointInterpreter(this));
       return jointInterpreter;
     }
     Log(e_FatalError, "PhysicsJoint", "GetInterpreter", "No appropriate interpreter found for this ObjectType");
-    return boost::intrusive_ptr<PhysicsJoint_JointInterpreter>();
+    return blunted::intrusive_ptr<PhysicsJoint_JointInterpreter>();
   }
 
   void PhysicsJoint::SetPosition(const Vector3 &newPosition) {
@@ -50,9 +50,9 @@ namespace blunted {
     physics = caller->GetPhysicsScene()->GetPhysicsSystem()->GetPhysicsWrapper();
   }
 
-  void PhysicsJoint_JointInterpreter::OnLoad(boost::intrusive_ptr<Joint> joint, boost::intrusive_ptr<Geometry> object1, boost::intrusive_ptr<Geometry> object2, const Vector3 &anchor, const Vector3 &axis1, const Vector3 &axis2) {
+  void PhysicsJoint_JointInterpreter::OnLoad(blunted::intrusive_ptr<Joint> joint, blunted::intrusive_ptr<Geometry> object1, blunted::intrusive_ptr<Geometry> object2, const Vector3 &anchor, const Vector3 &axis1, const Vector3 &axis2) {
     // find actors
-    boost::intrusive_ptr<PhysicsGeometry_GeometryInterpreter> interpreter = static_pointer_cast<PhysicsGeometry_GeometryInterpreter>(object1->GetInterpreter(e_SystemType_Physics));
+    blunted::intrusive_ptr<PhysicsGeometry_GeometryInterpreter> interpreter = static_pointer_cast<PhysicsGeometry_GeometryInterpreter>(object1->GetInterpreter(e_SystemType_Physics));
     object1->LockSubject();
     IPhysicsActor *actor1 = interpreter->GetActor();
     object1->UnlockSubject();

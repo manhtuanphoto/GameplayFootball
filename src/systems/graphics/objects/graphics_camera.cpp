@@ -21,13 +21,13 @@ namespace blunted {
   GraphicsCamera::~GraphicsCamera() {
   }
 
-  boost::intrusive_ptr<Interpreter> GraphicsCamera::GetInterpreter(e_ObjectType objectType) {
+  blunted::intrusive_ptr<Interpreter> GraphicsCamera::GetInterpreter(e_ObjectType objectType) {
     if (objectType == e_ObjectType_Camera) {
-      boost::intrusive_ptr<GraphicsCamera_CameraInterpreter> CameraInterpreter(new GraphicsCamera_CameraInterpreter(this));
+      blunted::intrusive_ptr<GraphicsCamera_CameraInterpreter> CameraInterpreter(new GraphicsCamera_CameraInterpreter(this));
       return CameraInterpreter;
     }
     Log(e_FatalError, "GraphicsCamera", "GetInterpreter", "No appropriate interpreter found for this ObjectType");
-    return boost::intrusive_ptr<GraphicsCamera_CameraInterpreter>();
+    return blunted::intrusive_ptr<GraphicsCamera_CameraInterpreter>();
   }
 
   void GraphicsCamera::SetPosition(const Vector3 &newPosition) {
@@ -62,7 +62,7 @@ namespace blunted {
 
     Renderer3D *renderer3D = caller->GetGraphicsScene()->GetGraphicsSystem()->GetRenderer3D();
 
-    boost::intrusive_ptr<Renderer3DMessage_CreateView> createView(new Renderer3DMessage_CreateView(caller->x_percent, caller->y_percent, caller->width_percent, caller->height_percent));
+    blunted::intrusive_ptr<Renderer3DMessage_CreateView> createView(new Renderer3DMessage_CreateView(caller->x_percent, caller->y_percent, caller->width_percent, caller->height_percent));
     renderer3D->messageQueue.PushMessage(createView);
     createView->Wait();
     caller->viewID = createView->viewID;
@@ -71,7 +71,7 @@ namespace blunted {
   void GraphicsCamera_CameraInterpreter::OnUnload() {
     Renderer3D *renderer3D = caller->GetGraphicsScene()->GetGraphicsSystem()->GetRenderer3D();
 
-    boost::intrusive_ptr<Renderer3DMessage_DeleteView> deleteView(new Renderer3DMessage_DeleteView(caller->viewID));
+    blunted::intrusive_ptr<Renderer3DMessage_DeleteView> deleteView(new Renderer3DMessage_DeleteView(caller->viewID));
     renderer3D->messageQueue.PushMessage(deleteView);
     deleteView->Wait();
 
@@ -93,16 +93,16 @@ namespace blunted {
     caller->SetRotation(rotation);
   }
 
-  void GraphicsCamera_CameraInterpreter::EnqueueView(const std::string &camName, std::deque < boost::intrusive_ptr<Geometry> > &visibleGeometry, std::deque < boost::intrusive_ptr<Light> > &visibleLights, std::deque < boost::intrusive_ptr<Skybox> > &skyboxes) {
+  void GraphicsCamera_CameraInterpreter::EnqueueView(const std::string &camName, std::deque < blunted::intrusive_ptr<Geometry> > &visibleGeometry, std::deque < blunted::intrusive_ptr<Light> > &visibleLights, std::deque < blunted::intrusive_ptr<Skybox> > &skyboxes) {
 
     ViewBuffer *buffer = &caller->viewBuffer;
 
 
     // geometry
 
-    std::deque < boost::intrusive_ptr<Geometry> >::iterator visibleGeometryIter = visibleGeometry.begin();
+    std::deque < blunted::intrusive_ptr<Geometry> >::iterator visibleGeometryIter = visibleGeometry.begin();
     while (visibleGeometryIter != visibleGeometry.end()) {
-      boost::intrusive_ptr<GraphicsGeometry_GeometryInterpreter> interpreter = static_pointer_cast<GraphicsGeometry_GeometryInterpreter>((*visibleGeometryIter)->GetInterpreter(e_SystemType_Graphics));
+      blunted::intrusive_ptr<GraphicsGeometry_GeometryInterpreter> interpreter = static_pointer_cast<GraphicsGeometry_GeometryInterpreter>((*visibleGeometryIter)->GetInterpreter(e_SystemType_Graphics));
 
       (*visibleGeometryIter)->LockSubject();
 
@@ -121,19 +121,19 @@ namespace blunted {
 
     // lights
 
-    std::deque < boost::intrusive_ptr<Light> >::iterator visibleLightIter = visibleLights.begin();
+    std::deque < blunted::intrusive_ptr<Light> >::iterator visibleLightIter = visibleLights.begin();
     while (visibleLightIter != visibleLights.end()) {
       LightQueueEntry entry;
 
-      boost::intrusive_ptr<GraphicsLight_LightInterpreter> interpreter = static_pointer_cast<GraphicsLight_LightInterpreter>((*visibleLightIter)->GetInterpreter(e_SystemType_Graphics));
+      blunted::intrusive_ptr<GraphicsLight_LightInterpreter> interpreter = static_pointer_cast<GraphicsLight_LightInterpreter>((*visibleLightIter)->GetInterpreter(e_SystemType_Graphics));
 
       (*visibleLightIter)->LockSubject();
       if (interpreter->GetShadow()) {
-        ShadowMap shadowMap = interpreter->GetShadowMap(camName);
-        if (shadowMap.cameraName != "") {
-          entry.shadowMapTexture = shadowMap.texture;
-          entry.lightProjectionMatrix = shadowMap.lightProjectionMatrix;
-          entry.lightViewMatrix = shadowMap.lightViewMatrix;
+        const ShadowMap *shadowMap = interpreter->FindShadowMap(camName);
+        if (shadowMap && !shadowMap->cameraName.empty()) {
+          entry.shadowMapTexture = shadowMap->texture;
+          entry.lightProjectionMatrix = shadowMap->lightProjectionMatrix;
+          entry.lightViewMatrix = shadowMap->lightViewMatrix;
           entry.hasShadow = true;
         } else {
           entry.hasShadow = false;
@@ -158,9 +158,9 @@ namespace blunted {
 
     // skyboxes
 
-    std::deque < boost::intrusive_ptr<Skybox> >::iterator skyboxIter = skyboxes.begin();
+    std::deque < blunted::intrusive_ptr<Skybox> >::iterator skyboxIter = skyboxes.begin();
     while (skyboxIter != skyboxes.end()) {
-      boost::intrusive_ptr<GraphicsGeometry_SkyboxInterpreter> interpreter = static_pointer_cast<GraphicsGeometry_SkyboxInterpreter>((*skyboxIter)->GetInterpreter(e_SystemType_Graphics));
+      blunted::intrusive_ptr<GraphicsGeometry_SkyboxInterpreter> interpreter = static_pointer_cast<GraphicsGeometry_SkyboxInterpreter>((*skyboxIter)->GetInterpreter(e_SystemType_Graphics));
 
       (*skyboxIter)->LockSubject();
 
@@ -184,7 +184,7 @@ namespace blunted {
 
   void GraphicsCamera_CameraInterpreter::OnPoke() {
 
-    boost::intrusive_ptr<Renderer3DMessage_RenderView> renderView(new Renderer3DMessage_RenderView(caller->viewID, caller->viewBuffer));
+    blunted::intrusive_ptr<Renderer3DMessage_RenderView> renderView(new Renderer3DMessage_RenderView(caller->viewID, caller->viewBuffer));
     caller->GetGraphicsScene()->GetGraphicsSystem()->GetRenderer3D()->messageQueue.PushMessage(renderView, true);
 
     // why do we have to wait? crashes otherwise.. todo: find out why!

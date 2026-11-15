@@ -30,7 +30,7 @@ void AddCompetitions(Gui2IconSelector *selector) {
     std::string logo_url = result->data.at(r).at(2).c_str();
 
     std::string logoPath = "databases/default/" + logo_url;
-    if (!boost::filesystem::exists(logoPath)) logoPath = "media/textures/orange.jpg";
+    if (!std::filesystem::exists(logoPath)) logoPath = "media/textures/orange.jpg";
     selector->AddEntry(int_to_str(id), name, logoPath);
   }
 
@@ -47,7 +47,7 @@ void AddTeams(Gui2IconSelector *selector, const std::string &competition_id) {
     std::string logo_url = result->data.at(r).at(2).c_str();
 
     std::string logoPath = "databases/default/" + logo_url;
-    if (!boost::filesystem::exists(logoPath)) logoPath = "media/textures/orange.jpg";
+    if (!std::filesystem::exists(logoPath)) logoPath = "media/textures/orange.jpg";
     selector->AddEntry(int_to_str(id), name, logoPath);
   }
 
@@ -86,15 +86,15 @@ TeamSelectPage::TeamSelectPage(Gui2WindowManager *windowManager, const Gui2PageD
   buttonStart1 = new Gui2Button(windowManager, "teamselect_button_start1", 0, 0, 29, 3, "Ready");
   buttonStart2 = new Gui2Button(windowManager, "teamselect_button_start2", 0, 0, 29, 3, "Ready");
 
-  competitionSelect1->sig_OnClick.connect(boost::bind(&TeamSelectPage::FocusTeamSelect1, this));
-  teamSelect1->sig_OnClick.connect(boost::bind(&TeamSelectPage::FocusStart1, this));
-  buttonStart1->sig_OnClick.connect(boost::bind(&TeamSelectPage::FocusCompetitionSelect2, this));
-  competitionSelect2->sig_OnClick.connect(boost::bind(&TeamSelectPage::FocusTeamSelect2, this));
-  teamSelect2->sig_OnClick.connect(boost::bind(&TeamSelectPage::FocusStart2, this));
-  buttonStart2->sig_OnClick.connect(boost::bind(&TeamSelectPage::GoOptionsMenu, this));
+  competitionSelect1->sig_OnClick.connect(blunted::Bind(&TeamSelectPage::FocusTeamSelect1, this));
+  teamSelect1->sig_OnClick.connect(blunted::Bind(&TeamSelectPage::FocusStart1, this));
+  buttonStart1->sig_OnClick.connect(blunted::Bind(&TeamSelectPage::FocusCompetitionSelect2, this));
+  competitionSelect2->sig_OnClick.connect(blunted::Bind(&TeamSelectPage::FocusTeamSelect2, this));
+  teamSelect2->sig_OnClick.connect(blunted::Bind(&TeamSelectPage::FocusStart2, this));
+  buttonStart2->sig_OnClick.connect(blunted::Bind(&TeamSelectPage::GoOptionsMenu, this));
 
-  competitionSelect1->sig_OnChange.connect(boost::bind(&TeamSelectPage::SetupTeamSelect1, this));
-  competitionSelect2->sig_OnChange.connect(boost::bind(&TeamSelectPage::SetupTeamSelect2, this));
+  competitionSelect1->sig_OnChange.connect(blunted::Bind(&TeamSelectPage::SetupTeamSelect1, this));
+  competitionSelect2->sig_OnChange.connect(blunted::Bind(&TeamSelectPage::SetupTeamSelect2, this));
 
   this->AddView(p1);
   p1->Show();

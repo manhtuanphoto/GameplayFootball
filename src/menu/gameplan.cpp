@@ -31,8 +31,8 @@ GamePlanPage::GamePlanPage(Gui2WindowManager *windowManager, const Gui2PageData 
   buttonTactics = new Gui2Button(windowManager, "gameplan_button_tactics", 0, 0, 34, 3, "Tactics");
   Gui2Button *buttonFormation = new Gui2Button(windowManager, "gameplan_button_formation", 0, 0, 34, 3, "Formation");
 
-  buttonLineup->sig_OnClick.connect(boost::bind(&GamePlanPage::GoLineupMenu, this));
-  buttonTactics->sig_OnClick.connect(boost::bind(&GamePlanPage::GoTacticsMenu, this));
+  buttonLineup->sig_OnClick.connect(blunted::Bind(&GamePlanPage::GoLineupMenu, this));
+  buttonTactics->sig_OnClick.connect(blunted::Bind(&GamePlanPage::GoTacticsMenu, this));
 
 
   if (IsReleaseVersion()) {
@@ -40,7 +40,7 @@ GamePlanPage::GamePlanPage(Gui2WindowManager *windowManager, const Gui2PageData 
     buttonFormation->SetActive(false);
   }
 
-  this->sig_OnClose.connect(boost::bind(&GamePlanPage::OnClose, this));
+  this->sig_OnClose.connect(blunted::Bind(&GamePlanPage::OnClose, this));
 
   this->AddView(header);
   header->Show();
@@ -97,14 +97,14 @@ void GamePlanPage::GoLineupMenu() {
   Deactivate();
 
   lineupMenu = new GamePlanSubMenu(windowManager, buttonLineup, grid, "lineup_submenu");
-  lineupMenu->sig_OnClose.connect(boost::bind(&GamePlanPage::SaveLineup, this));
-  lineupMenu->sig_OnClose.connect(boost::bind(&GamePlanPage::Reactivate, this));
+  lineupMenu->sig_OnClose.connect(blunted::Bind(&GamePlanPage::SaveLineup, this));
+  lineupMenu->sig_OnClose.connect(blunted::Bind(&GamePlanPage::Reactivate, this));
 
   const std::vector<PlayerData*> &playerData = teamData->GetPlayerData();
   for (unsigned int i = 0; i < playerData.size(); i++) {
     Vector3 color = GetButtonColor(i);
     Gui2Button *button = lineupMenu->AddButton("playerbutton_id" + int_to_str(playerData.at(i)->GetDatabaseID()), playerData.at(i)->GetLastName(), i, 0, color);
-    button->sig_OnClick.connect(boost::bind(&GamePlanPage::LineupMenuOnClick, this, _1));
+    button->sig_OnClick.connect(blunted::Bind(&GamePlanPage::LineupMenuOnClick, this, _1));
     button->SetToggleable(true);
     if (i == 0) button->SetFocus();
   }
@@ -177,8 +177,8 @@ void GamePlanPage::GoTacticsMenu() {
   tacticsSliders.clear(); // could still be here from previous tactics subpage visit. should clear this on leaving page but we have no mechanism to do so (<- todo, could use onclose probably)
 
   tacticsMenu = new GamePlanSubMenu(windowManager, buttonTactics, grid, "tactics_submenu");
-  tacticsMenu->sig_OnClose.connect(boost::bind(&GamePlanPage::SaveTactics, this));
-  tacticsMenu->sig_OnClose.connect(boost::bind(&GamePlanPage::Reactivate, this));
+  tacticsMenu->sig_OnClose.connect(blunted::Bind(&GamePlanPage::SaveTactics, this));
+  tacticsMenu->sig_OnClose.connect(blunted::Bind(&GamePlanPage::Reactivate, this));
 
   const Properties &userProps = teamData->GetTactics().userProperties;
   const map_Properties *userPropMap = userProps.GetProperties();
@@ -196,7 +196,7 @@ void GamePlanPage::GoTacticsMenu() {
     slider.widget = tacticsMenu->AddSlider("tacticsslider_" + slider.tacticName, teamData->GetTactics().humanReadableNames.Get(slider.tacticName.c_str(), slider.tacticName), i, 0);
     slider.widget->AddHelperValue(Vector3(80, 80, 250), "factory default for this team", factoryProps.GetReal(slider.tacticName.c_str()));
     slider.widget->SetValue(userProps.GetReal(slider.tacticName.c_str()));
-    slider.widget->sig_OnChange.connect(boost::bind(&GamePlanPage::TacticsMenuOnChange, this, _1, slider.id));
+    slider.widget->sig_OnChange.connect(blunted::Bind(&GamePlanPage::TacticsMenuOnChange, this, _1, slider.id));
     if (i == 0) slider.widget->SetFocus();
     tacticsSliders.push_back(slider);
     i++;

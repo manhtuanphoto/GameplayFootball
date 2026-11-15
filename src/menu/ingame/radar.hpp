@@ -11,6 +11,7 @@
 #include "scene/objects/image2d.hpp"
 
 class Match;
+class Player;
 
 namespace blunted {
 
@@ -29,7 +30,10 @@ namespace blunted {
       Gui2Image *bg;
       std::vector<Gui2Image*> team1avatars;
       std::vector<Gui2Image*> team2avatars;
+      std::vector<Player*> team1PlayersScratch;
+      std::vector<Player*> team2PlayersScratch;
       Gui2Image* ball;
+      bool ballZInitialized = false;
 
       Match *match;
 

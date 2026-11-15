@@ -68,7 +68,7 @@ namespace blunted {
       virtual Matrix4 CreateOrthoMatrix(float left, float right, float bottom, float top, float nearCap = -1, float farCap = -1);
 
       // vertex buffers
-      virtual VertexBufferID CreateVertexBuffer(float *vertices, unsigned int verticesDataSize, std::vector<unsigned int> indices, e_VertexBufferUsage usage);
+      virtual VertexBufferID CreateVertexBuffer(float *vertices, unsigned int verticesDataSize, std::vector<unsigned int> indices, e_VertexBufferUsage usage, const std::vector<float> &skinData = std::vector<float>());
       virtual void UpdateVertexBuffer(VertexBufferID vertexBufferID, float *vertices, unsigned int verticesDataSize);
       virtual void DeleteVertexBuffer(VertexBufferID vertexBufferID);
       virtual void RenderVertexBuffer(const std::deque<VertexBufferQueueEntry> &vertexBufferQueue, e_RenderMode renderMode = e_RenderMode_Full);
@@ -104,7 +104,7 @@ namespace blunted {
       virtual void SetRenderBufferStorage(e_InternalPixelFormat internalPixelFormat, int width, int height);
 
       // render targets
-      virtual void SetRenderTargets(std::vector<e_TargetAttachment> targetAttachments);
+      virtual void SetRenderTargets(const std::vector<e_TargetAttachment> &targetAttachments);
 
       // utility
       virtual void SetFOV(float angle);
@@ -112,6 +112,13 @@ namespace blunted {
       virtual void PopAttribute();
       virtual void SetViewport(int x, int y, int width, int height);
       virtual void GetContextSize(int &width, int &height, int &bpp);
+      virtual void GetDrawableSize(int &width, int &height);
+      virtual void SetWindowMode(int width, int height, bool fullscreen);
+      virtual bool IsFullscreen() const;
+      virtual void SetVSync(bool enabled);
+      virtual bool GetVSync() const;
+      virtual void SetAntiAliasingMode(e_AntiAliasingMode mode);
+      virtual e_AntiAliasingMode GetAntiAliasingMode() const;
       virtual void SetPolygonOffset(float scale, float bias);
 
       // shaders
@@ -124,9 +131,14 @@ namespace blunted {
       virtual void SetUniformFloat3(const std::string &shaderName, const std::string &varName, float value1, float value2, float value3);
       virtual void SetUniformFloat3Array(const std::string &shaderName, const std::string &varName, int count, float *values);
       virtual void SetUniformMatrix4(const std::string &shaderName, const std::string &varName, const Matrix4 &mat);
+      virtual void SetUniformMatrix4Array(const std::string &shaderName, const std::string &varName, int count, const float *values);
 
       virtual void HDRCaptureOverallBrightness();
       virtual float HDRGetOverallBrightness();
+
+      virtual void InitMainThread();
+      virtual void RunMainLoop();
+      virtual void ShutdownMainThread();
 
       void operator()();
 
@@ -135,6 +147,16 @@ namespace blunted {
       SDL_Window* window;
       int context_width, context_height, context_bpp;
       bool contextIsActive;
+      bool isFullscreen;
+      bool vsyncEnabled;
+      e_AntiAliasingMode aaMode;
+      int maxTextureSize;
+      int windowedWidth, windowedHeight;
+
+      void ComputeViewRenderSize(const View &view, int &renderW, int &renderH);
+      void AllocateViewBuffers(View &view, int renderW, int renderH);
+      void DestroyViewBuffers(View &view);
+      void RefreshAllViews();
 
       float cameraNear;
       float cameraFar;
@@ -156,6 +178,8 @@ namespace blunted {
       //std::map<int, GLsync> VAOfence;
 
       signed int _cache_activeTextureUnit;
+      signed int _cache_boundTexture[16];
+      int ResolveUniformLocation(Shader &shader, const std::string &varName, bool allowArrayElemZero = false);
 
       // members and functions for rendering overlay with shaders instead of deprecated methods
       VertexBufferID overlayBuffer;  // buffer for drawing textures such as player's names and game score

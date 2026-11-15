@@ -10,7 +10,7 @@
 
 namespace blunted {
 
-  Console::Console(boost::shared_ptr<Scene2D> scene2D, int numlines) : scene2D(scene2D), numlines(numlines) {
+  Console::Console(std::shared_ptr<Scene2D> scene2D, int numlines) : scene2D(scene2D), numlines(numlines) {
     text2D = new Text2D(scene2D);
 
     lineheight = 20;
@@ -20,7 +20,7 @@ namespace blunted {
     input->SetPosition(10, CalculateY(numlines));
     scene2D->AddObject(input);
 
-    logConn = BindLog(boost::bind(&Console::PrintLog, this, _1, _2, _3, _4));
+    logConn = BindLog(blunted::Bind(&Console::PrintLog, this, _1, _2, _3, _4));
   }
 
   Console::~Console() {
@@ -71,7 +71,7 @@ namespace blunted {
     for (int i = 0; i < numToDraw; i++) {
       int offset = startOffset + i;
 
-      boost::intrusive_ptr<Image2D> text = text2D->Create(100);
+      blunted::intrusive_ptr<Image2D> text = text2D->Create(100);
       text2D->SetText(text, lines.at(offset), colors.at(offset));
       text->SetPosition(10, CalculateY(i));
       scene2D->AddObject(text);

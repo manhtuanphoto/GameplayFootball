@@ -31,12 +31,14 @@
 #include "managers/resourcemanagerpool.hpp"
 
 #include "systems/isystem.hpp"
+#include "systems/graphics/graphics_system.hpp"
 
 #include "base/log.hpp"
 #include "base/utils.hpp"
 #include "base/properties.hpp"
 
 #include "loaders/aseloader.hpp"
+#include "loaders/gltfloader.hpp"
 #include "loaders/imageloader.hpp"
 #include "loaders/wavloader.hpp"
 
@@ -44,17 +46,18 @@
 
 #include "SDL2/SDL_ttf.h"
 
-namespace boost {
-  void assertion_failed(char const * expr, char const * function, char const * file, long line) {
-    char errorString[256];
-    sprintf(errorString, "%s @ line %li: %s %s\n", file, line, function, expr);
-    blunted::Log(blunted::e_FatalError, "boost", "assertion_failed", errorString);
-  }
-}
+#ifdef WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <mmsystem.h>
+#endif
 
 namespace blunted {
 
   ASELoader *aseLoader;
+  GLTFLoader *gltfLoader;
   ImageLoader *imageLoader;
   WAVLoader *wavLoader;
 
@@ -73,6 +76,10 @@ namespace blunted {
   void Initialize(Properties &config) {
 
     printf("INIT\n");
+
+#ifdef WIN32
+    timeBeginPeriod(1);
+#endif
 
     LogOpen();
 
@@ -103,9 +110,9 @@ namespace blunted {
 
     // initialize resource managers
 
-    boost::shared_ptr < ResourceManager<GeometryData> > geometryDataResourceManager(new ResourceManager<GeometryData>("geometrydata"));
-    boost::shared_ptr < ResourceManager<Surface> > surfaceResourceManager(new ResourceManager<Surface>("surface"));
-    boost::shared_ptr < ResourceManager<SoundBuffer> > soundBufferResourceManager(new ResourceManager<SoundBuffer>("soundbuffer"));
+    std::shared_ptr < ResourceManager<GeometryData> > geometryDataResourceManager(new ResourceManager<GeometryData>("geometrydata"));
+    std::shared_ptr < ResourceManager<Surface> > surfaceResourceManager(new ResourceManager<Surface>("surface"));
+    std::shared_ptr < ResourceManager<SoundBuffer> > soundBufferResourceManager(new ResourceManager<SoundBuffer>("soundbuffer"));
 
     ResourceManagerPool::GetInstance().RegisterManager(e_ResourceType_GeometryData, geometryDataResourceManager);
     ResourceManagerPool::GetInstance().RegisterManager(e_ResourceType_Surface, surfaceResourceManager);
@@ -113,8 +120,12 @@ namespace blunted {
 
     aseLoader = new ASELoader();
     geometryDataResourceManager->RegisterLoader("ase", aseLoader);
+    gltfLoader = new GLTFLoader();
+    geometryDataResourceManager->RegisterLoader("gltf", gltfLoader);
+    geometryDataResourceManager->RegisterLoader("glb", gltfLoader);
     imageLoader = new ImageLoader();
     surfaceResourceManager->RegisterLoader("jpg", imageLoader);
+    surfaceResourceManager->RegisterLoader("jpeg", imageLoader);
     surfaceResourceManager->RegisterLoader("png", imageLoader);
     wavLoader = new WAVLoader();
     soundBufferResourceManager->RegisterLoader("wav", wavLoader);
@@ -133,7 +144,27 @@ namespace blunted {
   void Run() {
     printf("RUN\n");
 
-    scheduler->Run();
+    ISystem *gfxSysBase = SystemManager::GetInstance().GetSystem("GraphicsSystem");
+    GraphicsSystem *gfxSystem = static_cast<GraphicsSystem *>(gfxSysBase);
+    Renderer3D *renderer3D = gfxSystem ? gfxSystem->GetRenderer3D() : nullptr;
+
+    if (renderer3D) {
+      std::thread schedulerThread([&]() {
+        scheduler->Run();
+        // Wake up the Main Thread render/event loop once all task sequences have exited
+        intrusive_ptr<Message_Shutdown> stopLoop(new Message_Shutdown());
+        renderer3D->messageQueue.PushMessage(stopLoop, true);
+      });
+
+      // Keep OpenGL & SDL window/event pumping strictly on the Main Thread
+      renderer3D->RunMainLoop();
+
+      if (schedulerThread.joinable()) {
+        schedulerThread.join();
+      }
+    } else {
+      scheduler->Run();
+    }
 
     // stop signaling systems
     // also clears links to user tasks
@@ -164,9 +195,11 @@ namespace blunted {
     TaskManager::GetInstance().EmptyQueue();
 
     delete aseLoader;
+    delete gltfLoader;
     delete imageLoader;
     delete wavLoader;
     aseLoader = 0;
+    gltfLoader = 0;
     imageLoader = 0;
     wavLoader = 0;
 
@@ -196,6 +229,10 @@ namespace blunted {
     TTF_Quit();
     SDL_Quit();
 
+#ifdef WIN32
+    timeEndPeriod(1);
+#endif
+
     LogClose();
   }
 
@@ -203,21 +240,21 @@ namespace blunted {
   // additional functions
 
   void RegisterObjectTypes(ObjectFactory *objectFactory) {
-    boost::intrusive_ptr<Camera> camera(new Camera("Camera prototype"));
+    blunted::intrusive_ptr<Camera> camera(new Camera("Camera prototype"));
     objectFactory->RegisterPrototype(e_ObjectType_Camera, camera);
-    boost::intrusive_ptr<Image2D> image2D(new Image2D("Image2D prototype"));
+    blunted::intrusive_ptr<Image2D> image2D(new Image2D("Image2D prototype"));
     objectFactory->RegisterPrototype(e_ObjectType_Image2D, image2D);
-    boost::intrusive_ptr<Geometry> geometry(new Geometry("Geometry prototype"));
+    blunted::intrusive_ptr<Geometry> geometry(new Geometry("Geometry prototype"));
     objectFactory->RegisterPrototype(e_ObjectType_Geometry, geometry);
-    boost::intrusive_ptr<Skybox> skybox(new Skybox("Skybox prototype"));
+    blunted::intrusive_ptr<Skybox> skybox(new Skybox("Skybox prototype"));
     objectFactory->RegisterPrototype(e_ObjectType_Skybox, skybox);
-    boost::intrusive_ptr<Light> light(new Light("Light prototype"));
+    blunted::intrusive_ptr<Light> light(new Light("Light prototype"));
     objectFactory->RegisterPrototype(e_ObjectType_Light, light);
-    boost::intrusive_ptr<Joint> joint(new Joint("Joint prototype"));
+    blunted::intrusive_ptr<Joint> joint(new Joint("Joint prototype"));
     objectFactory->RegisterPrototype(e_ObjectType_Joint, joint);
-    boost::intrusive_ptr<AudioReceiver> audioReceiver(new AudioReceiver("AudioReceiver prototype"));
+    blunted::intrusive_ptr<AudioReceiver> audioReceiver(new AudioReceiver("AudioReceiver prototype"));
     objectFactory->RegisterPrototype(e_ObjectType_AudioReceiver, audioReceiver);
-    boost::intrusive_ptr<Sound> sound(new Sound("Sound prototype"));
+    blunted::intrusive_ptr<Sound> sound(new Sound("Sound prototype"));
     objectFactory->RegisterPrototype(e_ObjectType_Sound, sound);
   }
 

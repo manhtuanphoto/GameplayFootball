@@ -17,7 +17,7 @@ namespace blunted {
   }
 
   // load file into resource
-  void WAVLoader::Load(std::string filename, boost::intrusive_ptr < Resource <SoundBuffer> > resource) {
+  void WAVLoader::Load(std::string filename, blunted::intrusive_ptr < Resource <SoundBuffer> > resource) {
 
     int channels, bits;
     unsigned int frequency;

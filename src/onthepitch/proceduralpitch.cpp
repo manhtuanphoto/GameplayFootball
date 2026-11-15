@@ -50,27 +50,55 @@ template <typename T> T BilinearSample(T* tex, float x, float y, int w, int h) {
   return result;
 }
 
-Uint32 GetPitchDiffuseColor(SDL_Surface *pitchSurf, float xCoord, float yCoord) {
+inline float xmod(float coord, float repeat) { return coord - repeat * floor(coord / repeat); }
 
-  float texMultiplier = 0.3f;
+float GetSmoothGrassDirection(float coord, float repeat, int transitionSharpness = 5) {
+  float iteration = std::floor(coord / repeat);
+  float bias = coord - repeat * iteration; // goes from 0 to 1 over two bands (since bands are split by being < 0.5 and > 0.5)
+  bias = std::sin(bias * 2 * pi) * 0.5f + 0.5f;
+  for (int i = 0; i < transitionSharpness; i++) {
+    bias = curve(bias, 1.0f);
+  }
+
+  // back to -1 .. 1 range
+  bias *= 2.0f;
+  bias -= 1.0f;
+  return bias;
+}
+
+Uint32 GetPitchDiffuseColor(SDL_Surface *pitchSurf, float xCoord, float yCoord, float repeatMultiplier = 0.5f) {
+
+  float texMultiplier = 0.28f;
   float texScale = 0.32f;
   float randomNoiseMultiplier = 0.0f;
-  float perlinNoiseMultiplier = 0.4f;
-  float brightness = 2.0f;
+  float perlinNoiseMultiplier = 0.34f;
+  float brightness = 2.05f;
 
   float r, g, b;
 
-  float contrast = 0.4f; // g <=> rb contrast. lower = less saturation, higher = greener
-  float rToB = GetConfiguration()->GetReal("graphics_pitchredtoblueratio", 0.5f) * 2.0f; // 0 .. 2, higher is more red, lower is more blue
-  r = ((35 - contrast * 10) * rToB ) * brightness;
-  g = 46 * brightness;
-  b = ((25 - contrast * 10) * (2.0f - rToB) ) * brightness;
+  float contrast = 0.46f; // rich natural emerald stadium grass
+  float rToB = GetConfiguration()->GetReal("graphics_pitchredtoblueratio", 0.5f) * 2.0f;
+  r = ((31.0f - contrast * 9.0f) * rToB) * brightness;
+  g = 49.5f * brightness;
+  b = ((22.5f - contrast * 8.0f) * (2.0f - rToB)) * brightness;
+
+  // Authentic stadium mowing stripes (subtle diffuse sheen difference between grass blades bent toward/away from camera)
+  if (fabs(xCoord) < pitchHalfW && fabs(yCoord) < pitchHalfH) {
+    float xRepeat = 11.0f * repeatMultiplier;
+    float yRepeat = 11.0f * repeatMultiplier;
+    int transitionSharpness = (repeatMultiplier > 0.75f) ? 7 : 5;
+    float mowX = GetSmoothGrassDirection(xCoord / xRepeat, 1.0f, transitionSharpness);
+    float mowY = GetSmoothGrassDirection(yCoord / yRepeat, 1.0f, transitionSharpness);
+    float stripe = mowX * 0.068f + mowY * 0.022f;
+    r *= (1.0f + stripe * 1.15f);
+    g *= (1.0f + stripe * 0.95f);
+    b *= (1.0f + stripe * 0.65f);
+  }
 
   float seamlessX = ((xCoord / pitchFullHalfW) * 0.5 + 0.5) * seamlessTexW * 18.0 * texScale;
   float seamlessY = ((yCoord / pitchFullHalfH) * 0.5 + 0.5) * seamlessTexH * 12.0 * texScale;
   seamlessX = std::fmod(seamlessX, seamlessTexW);
   seamlessY = std::fmod(seamlessY, seamlessTexH);
-  //printf("%f, %f - ", seamlessX, seamlessY);
   Vector3 tex = BilinearSample(seamlessTex, seamlessX, seamlessY, seamlessTexW, seamlessTexH);
   r = r * (1.0f - texMultiplier) + tex.coords[0] * texMultiplier;
   g = g * (1.0f - texMultiplier) + tex.coords[1] * texMultiplier;
@@ -88,24 +116,15 @@ Uint32 GetPitchDiffuseColor(SDL_Surface *pitchSurf, float xCoord, float yCoord) 
   float perlinNoiseG = perlinNoise;
   float perlinNoiseB = perlinNoise;
 
-/* mud
-  if (noise < 0.1) {
-    float bias = noise / 1.0;
-    r = (r * bias) + r * 1.0  * (1 - bias);
-    g = (g * bias) + g * 0.9  * (1 - bias);
-    b = (b * bias) + b * 0.9  * (1 - bias);
-  }
-*/
-
   float randomNoise = 0.0f;
   if (randomNoiseMultiplier > 0.0f) randomNoise = fastrandom(-1, 1);
-  r += ((perlinNoiseR * perlinNoiseMultiplier) + (randomNoise * randomNoiseMultiplier)) * 40.0f;
-  g += ((perlinNoiseG * perlinNoiseMultiplier) + (randomNoise * randomNoiseMultiplier)) * 40.0f;
-  b += ((perlinNoiseB * perlinNoiseMultiplier) + (randomNoise * randomNoiseMultiplier)) * 40.0f;
+  r += ((perlinNoiseR * perlinNoiseMultiplier) + (randomNoise * randomNoiseMultiplier)) * 38.0f;
+  g += ((perlinNoiseG * perlinNoiseMultiplier) + (randomNoise * randomNoiseMultiplier)) * 38.0f;
+  b += ((perlinNoiseB * perlinNoiseMultiplier) + (randomNoise * randomNoiseMultiplier)) * 34.0f;
 
-  // fake ambient occlusion
+  // Subtle stadium bowl vignette near outer touchlines
   Vector3 lightPos = Vector3(0, 0, 0);
-  float darkness = 1.0f - std::pow(clamp((lightPos - Vector3(xCoord / pitchHalfW, yCoord / pitchHalfH, 0)).GetLength() * 0.7f, 0.0, 1.0), 1.5f) * 0.18f;
+  float darkness = 1.0f - std::pow(clamp((lightPos - Vector3(xCoord / pitchHalfW, yCoord / pitchHalfH, 0)).GetLength() * 0.68f, 0.0, 1.0), 1.6f) * 0.12f;
   r *= darkness;
   g *= darkness;
   b *= darkness;
@@ -124,8 +143,8 @@ Uint32 GetPitchDiffuseColor(SDL_Surface *pitchSurf, float xCoord, float yCoord) 
 
 inline Uint32 GetPitchSpecularColor(SDL_Surface *pitchSurf, float xCoord, float yCoord) {
 
-  float base = 2.0f;
-  float noisefac = 18.0f;
+  float base = 4.0f;
+  float noisefac = 16.0f;
 
   float perlX = ((xCoord / pitchFullHalfW) * 0.5 + 0.5) * perlinTexW;
   float perlY = ((yCoord / pitchFullHalfH) * 0.5 + 0.5) * perlinTexH;
@@ -138,22 +157,6 @@ inline Uint32 GetPitchSpecularColor(SDL_Surface *pitchSurf, float xCoord, float 
 
   Uint32 color = SDL_MapRGB(pitchSurf->format, noise, noise, noise);
   return color;
-}
-
-inline float xmod(float coord, float repeat) { return coord - repeat * floor(coord / repeat); }
-
-float GetSmoothGrassDirection(float coord, float repeat, int transitionSharpness = 5) {
-  float iteration = std::floor(coord / repeat);
-  float bias = coord - repeat * iteration; // goes from 0 to 1 over two bands (since bands are split by being < 0.5 and > 0.5)
-  bias = std::sin(bias * 2 * pi) * 0.5f + 0.5f;
-  for (int i = 0; i < transitionSharpness; i++) {
-    bias = curve(bias, 1.0f);
-  }
-
-  // back to -1 .. 1 range
-  bias *= 2.0f;
-  bias -= 1.0f;
-  return bias;
 }
 
 Uint32 GetPitchNormalColor(SDL_Surface *pitchSurf, float xCoord, float yCoord, float repeatMultiplier) {
@@ -311,7 +314,7 @@ void CreateChunk(int i, int resX, int resY, int resSpecularX, int resSpecularY, 
     for (int y = 0; y < resY; y++) {
       float xCoord = x / (resX * 1.0) * pitchFullHalfW + pitchFullHalfW * offsetW;
       float yCoord = y / (resY * 1.0) * pitchFullHalfH + pitchFullHalfH * offsetH;
-      diffuseBitmap[y * resX + x] = GetPitchDiffuseColor(pitchDiffuseSurf, xCoord, yCoord);
+      diffuseBitmap[y * resX + x] = GetPitchDiffuseColor(pitchDiffuseSurf, xCoord, yCoord, grassNormalRepeatMultiplier);
     }
   }
   if (Verbose()) printf("1a\n");
@@ -347,11 +350,11 @@ void CreateChunk(int i, int resX, int resY, int resSpecularX, int resSpecularY, 
   // find pitch texture
 
   bool alreadyThere;
-  boost::intrusive_ptr < Resource<Texture> > pitchDiffuseTex = ResourceManagerPool::GetInstance().GetManager<Texture>(e_ResourceType_Texture)->Fetch("pitch_0" + int_to_str(i) + ".png", false, alreadyThere, true);
+  blunted::intrusive_ptr < Resource<Texture> > pitchDiffuseTex = ResourceManagerPool::GetInstance().GetManager<Texture>(e_ResourceType_Texture)->Fetch("pitch_0" + int_to_str(i) + ".png", false, alreadyThere, true);
   assert(alreadyThere);
-  boost::intrusive_ptr < Resource<Texture> > pitchSpecularTex = ResourceManagerPool::GetInstance().GetManager<Texture>(e_ResourceType_Texture)->Fetch("pitch_specular_0" + int_to_str(i) + ".png", false, alreadyThere, true);
+  blunted::intrusive_ptr < Resource<Texture> > pitchSpecularTex = ResourceManagerPool::GetInstance().GetManager<Texture>(e_ResourceType_Texture)->Fetch("pitch_specular_0" + int_to_str(i) + ".png", false, alreadyThere, true);
   assert(alreadyThere);
-  boost::intrusive_ptr < Resource<Texture> > pitchNormalTex = ResourceManagerPool::GetInstance().GetManager<Texture>(e_ResourceType_Texture)->Fetch("pitch_normal_0" + int_to_str(i) + ".png", false, alreadyThere, true);
+  blunted::intrusive_ptr < Resource<Texture> > pitchNormalTex = ResourceManagerPool::GetInstance().GetManager<Texture>(e_ResourceType_Texture)->Fetch("pitch_normal_0" + int_to_str(i) + ".png", false, alreadyThere, true);
   assert(alreadyThere);
 
   // todo: don't directly access texture resources anymore, work via engine's Surface resources.
@@ -451,10 +454,10 @@ void GeneratePitch(int resX, int resY, int resSpecularX, int resSpecularY, int r
     }
   }
 
-  boost::thread pitchThread[4];
+  std::thread pitchThread[4];
   float grassNormalRepeatMultiplier = (random(0, 1) > 0.5f) ? 1.0f : 0.5f;
   for (int i = 0; i < 4; i++) {
-    pitchThread[i] = boost::thread(&CreateChunk, i + 1, resX, resY, resSpecularX, resSpecularY, resNormalX, resNormalY, grassNormalRepeatMultiplier);
+    pitchThread[i] = std::thread(&CreateChunk, i + 1, resX, resY, resSpecularX, resSpecularY, resNormalX, resNormalY, grassNormalRepeatMultiplier);
   }
 
   for (int i = 0; i < 4; i++) {

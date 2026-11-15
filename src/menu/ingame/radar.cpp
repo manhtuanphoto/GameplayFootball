@@ -24,7 +24,9 @@ namespace blunted {
     bg->LoadImage("media/menu/radar/radar.png");
     bg->Show();
 
-    ball = new Gui2Image(windowManager, "radar_ball", 0, 0, 1, 1.2);
+    float ballH = 1.3f;
+    float ballW = ballH / windowManager->GetAspectRatio();
+    ball = new Gui2Image(windowManager, "radar_ball", 0, 0, ballW, ballH);
     this->AddView(ball);
     ball->LoadImage("media/menu/radar/ball.png");
     ball->Show();
@@ -36,6 +38,8 @@ namespace blunted {
   }
 
   void Gui2Radar::ReloadAvatars(int teamID, unsigned int playerCount) {
+    float avatarH = 1.6f;
+    float avatarW = avatarH / windowManager->GetAspectRatio();
 
     if (teamID == 0) {
       for (unsigned int i = 0; i < team1avatars.size(); i++) {
@@ -44,7 +48,7 @@ namespace blunted {
       }
       team1avatars.clear();
       for (unsigned int i = 0; i < playerCount; i++) {
-        Gui2Image *avatar = new Gui2Image(windowManager, "radar_avatar_" + int_to_str(teamID) + "_" + int_to_str(i), 0, 0, 1.2, 1.6);
+        Gui2Image *avatar = new Gui2Image(windowManager, "radar_avatar_" + int_to_str(teamID) + "_" + int_to_str(i), 0, 0, avatarW, avatarH);
         this->AddView(avatar);
         avatar->LoadImage("media/menu/radar/p1.png");
         avatar->Show();
@@ -60,7 +64,7 @@ namespace blunted {
       }
       team2avatars.clear();
       for (unsigned int i = 0; i < playerCount; i++) {
-        Gui2Image *avatar = new Gui2Image(windowManager, "radar_avatar_" + int_to_str(teamID) + "_" + int_to_str(i), 0, 0, 1.2, 1.6);
+        Gui2Image *avatar = new Gui2Image(windowManager, "radar_avatar_" + int_to_str(teamID) + "_" + int_to_str(i), 0, 0, avatarW, avatarH);
         this->AddView(avatar);
         avatar->LoadImage("media/menu/radar/p2.png");
         avatar->Show();
@@ -74,39 +78,52 @@ namespace blunted {
   }
 
   void Gui2Radar::Put() {
+    float ballH = 1.3f;
+    float ballW = ballH / windowManager->GetAspectRatio();
+    float avatarH = 1.6f;
+    float avatarW = avatarH / windowManager->GetAspectRatio();
 
     Vector3 position = match->GetBall()->Predict(0).Get2D();
     Vector3 pos2d = position * Vector3(1 / (pitchHalfW * 2), - (1 / (pitchHalfH * 2)), 0);
     pos2d = pos2d + Vector3(0.5, 0.5, 0);
     pos2d = pos2d * Vector3(0.96f, 0.96f, 0) + Vector3(0.02f, 0.02f, 0); // margin
-    ball->SetPosition(pos2d.coords[0] * width_percent - 0.5f, pos2d.coords[1] * height_percent - 0.6f);
+    ball->SetPosition(pos2d.coords[0] * width_percent - ballW * 0.5f, pos2d.coords[1] * height_percent - ballH * 0.5f);
 
     // get player positions
-    std::vector<Player*> team1players;
-    match->GetActiveTeamPlayers(0, team1players);
-    std::vector<Player*> team2players;
-    match->GetActiveTeamPlayers(1, team2players);
+    team1PlayersScratch.clear();
+    match->GetActiveTeamPlayers(0, team1PlayersScratch);
+    team2PlayersScratch.clear();
+    match->GetActiveTeamPlayers(1, team2PlayersScratch);
 
-    if (team1players.size() != team1avatars.size()) ReloadAvatars(0, team1players.size());
-    if (team2players.size() != team2avatars.size()) ReloadAvatars(1, team2players.size());
-    ball->SetZPriority(1); // ball on top
-
-    for (unsigned int i = 0; i < team1players.size(); i++) {
-      Vector3 position = team1players.at(i)->GetPosition();
-      Vector3 pos2d = position * Vector3(1 / (pitchHalfW * 2), - (1 / (pitchHalfH * 2)), 0);
-      pos2d = pos2d + Vector3(0.5, 0.5, 0);
-      pos2d = pos2d * Vector3(0.96f, 0.96f, 0) + Vector3(0.02f, 0.02f, 0); // margin
-
-      team1avatars.at(i)->SetPosition(pos2d.coords[0] * width_percent - 0.6f, pos2d.coords[1] * height_percent - 0.8f);
+    bool avatarsReloaded = false;
+    if (team1PlayersScratch.size() != team1avatars.size()) {
+      ReloadAvatars(0, team1PlayersScratch.size());
+      avatarsReloaded = true;
+    }
+    if (team2PlayersScratch.size() != team2avatars.size()) {
+      ReloadAvatars(1, team2PlayersScratch.size());
+      avatarsReloaded = true;
+    }
+    if (!ballZInitialized || avatarsReloaded) {
+      ball->SetZPriority(1); // ball on top
+      ballZInitialized = true;
     }
 
-    for (unsigned int i = 0; i < team2players.size(); i++) {
-      Vector3 position = team2players.at(i)->GetPosition();
-      Vector3 pos2d = position * Vector3(1 / (pitchHalfW * 2), - (1 / (pitchHalfH * 2)), 0);
-      pos2d = pos2d + Vector3(0.5, 0.5, 0);
-      pos2d = pos2d * Vector3(0.96f, 0.96f, 0) + Vector3(0.02f, 0.02f, 0); // margin
+    const float invPitchW = 1.0f / (pitchHalfW * 2.0f);
+    const float invPitchH = -1.0f / (pitchHalfH * 2.0f);
 
-      team2avatars.at(i)->SetPosition(pos2d.coords[0] * width_percent - 0.6f, pos2d.coords[1] * height_percent - 0.8f);
+    for (unsigned int i = 0; i < team1PlayersScratch.size(); i++) {
+      Vector3 pPos = team1PlayersScratch[i]->GetPosition();
+      float px = ((pPos.coords[0] * invPitchW + 0.5f) * 0.96f + 0.02f) * width_percent - avatarW * 0.5f;
+      float py = ((pPos.coords[1] * invPitchH + 0.5f) * 0.96f + 0.02f) * height_percent - avatarH * 0.5f;
+      team1avatars[i]->SetPosition(px, py);
+    }
+
+    for (unsigned int i = 0; i < team2PlayersScratch.size(); i++) {
+      Vector3 pPos = team2PlayersScratch[i]->GetPosition();
+      float px = ((pPos.coords[0] * invPitchW + 0.5f) * 0.96f + 0.02f) * width_percent - avatarW * 0.5f;
+      float py = ((pPos.coords[1] * invPitchH + 0.5f) * 0.96f + 0.02f) * height_percent - avatarH * 0.5f;
+      team2avatars[i]->SetPosition(px, py);
     }
 
   }

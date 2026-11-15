@@ -16,12 +16,12 @@ namespace blunted {
     e_FatalError
   };
 
-  typedef boost::signals2::signal < void(e_LogType, std::string, std::string, std::string) > signal_LogCallback;
+  using signal_LogCallback = Signal<void(e_LogType, std::string, std::string, std::string)>;
 
   void LogOpen();
   void LogClose();
 
-  boost::signals2::connection BindLog(const signal_LogCallback::slot_type &slot);
+  SignalConnection BindLog(const signal_LogCallback::slot_type &slot);
 
   void Log(e_LogType logType, std::string className, std::string methodName, std::string message);
 

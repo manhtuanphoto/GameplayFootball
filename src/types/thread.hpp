@@ -10,8 +10,6 @@
 #include "types/messagequeue.hpp"
 #include "types/lockable.hpp"
 
-#include "boost/thread.hpp"
-
 namespace blunted {
 
   enum e_ThreadState {
@@ -28,6 +26,9 @@ namespace blunted {
       }
 
       virtual ~Thread() {
+        if (thread.joinable()) {
+          thread.join();
+        }
       }
 
       e_ThreadState GetState() { // ATOMIC
@@ -66,19 +67,21 @@ namespace blunted {
 
 
       void Run() {
-        thread = boost::thread(boost::ref( *this ));
+        thread = std::thread(std::ref(*this));
       }
 
       void Join() {
-        thread.join();
+        if (thread.joinable()) {
+          thread.join();
+        }
       }
 
       // thread main loop
       virtual void operator()() = 0;
 
-      MessageQueue < boost::intrusive_ptr<Command> > messageQueue;
+      MessageQueue<intrusive_ptr<Command>> messageQueue;
 
-      boost::thread thread;
+      std::thread thread;
 
     protected:
       Lockable<e_ThreadState> state;

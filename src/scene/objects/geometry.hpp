@@ -23,8 +23,8 @@ namespace blunted {
 
       virtual void Exit();
 
-      void SetGeometryData(boost::intrusive_ptr < Resource<GeometryData> > geometryData);
-      boost::intrusive_ptr < Resource<GeometryData> > GetGeometryData();
+      void SetGeometryData(blunted::intrusive_ptr < Resource<GeometryData> > geometryData);
+      blunted::intrusive_ptr < Resource<GeometryData> > GetGeometryData();
 
       virtual void OnUpdateGeometryData(bool updateMaterials = true);
 
@@ -36,19 +36,24 @@ namespace blunted {
 
       virtual void ApplyForceAtRelativePosition(float force, const Vector3 &direction, const Vector3 &position);
 
+      void SetBoneMatrices(const std::vector<Matrix4> &matrices);
+      const std::vector<Matrix4> &GetBoneMatrices() const { return boneMatrices; }
+
     protected:
-      boost::intrusive_ptr < Resource<GeometryData> > geometryData;
+      blunted::intrusive_ptr < Resource<GeometryData> > geometryData;
+      std::vector<Matrix4> boneMatrices;
 
   };
 
   class IGeometryInterpreter : public Interpreter {
 
     public:
-      virtual void OnLoad(boost::intrusive_ptr<Geometry> geom) = 0;
-      virtual void OnUpdateGeometry(boost::intrusive_ptr<Geometry> geometry, bool updateMaterials) = 0;
+      virtual void OnLoad(blunted::intrusive_ptr<Geometry> geom) = 0;
+      virtual void OnUpdateGeometry(blunted::intrusive_ptr<Geometry> geometry, bool updateMaterials) = 0;
       virtual void OnUnload() = 0;
       virtual void OnMove(const Vector3 &position) = 0;
       virtual void OnRotate(const Quaternion &rotation) = 0;
+      virtual void OnSetBoneMatrices(const std::vector<Matrix4> &matrices) {}
 
       virtual void OnPoke() = 0;
 

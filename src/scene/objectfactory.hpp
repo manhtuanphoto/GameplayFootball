@@ -21,13 +21,13 @@ namespace blunted {
 
       virtual void Exit();
 
-      boost::intrusive_ptr<Object> CreateObject(const std::string &name, std::string objectTypeStr, std::string postfix = "_copy");
-      boost::intrusive_ptr<Object> CreateObject(const std::string &name, e_ObjectType objectType, std::string postfix = "_copy");
-      boost::intrusive_ptr<Object> CopyObject(boost::intrusive_ptr<Object> source, std::string postfix = "_copy");
-      void RegisterPrototype(e_ObjectType objectType, boost::intrusive_ptr<Object> prototype);
+      blunted::intrusive_ptr<Object> CreateObject(const std::string &name, std::string objectTypeStr, std::string postfix = "_copy");
+      blunted::intrusive_ptr<Object> CreateObject(const std::string &name, e_ObjectType objectType, std::string postfix = "_copy");
+      blunted::intrusive_ptr<Object> CopyObject(blunted::intrusive_ptr<Object> source, std::string postfix = "_copy");
+      void RegisterPrototype(e_ObjectType objectType, blunted::intrusive_ptr<Object> prototype);
 
     protected:
-      std::map <e_ObjectType, boost::intrusive_ptr<Object> > prototypes;
+      std::map <e_ObjectType, blunted::intrusive_ptr<Object> > prototypes;
 
   };
 

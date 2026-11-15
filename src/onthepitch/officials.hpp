@@ -14,7 +14,7 @@ class PlayerData;
 class Officials {
 
   public:
-    Officials(Match *match, boost::intrusive_ptr<Node> fullbodySourceNode, std::map<Vector3, Vector3> &colorCoords, boost::intrusive_ptr < Resource<Surface> > kit, boost::shared_ptr<AnimCollection> animCollection);
+    Officials(Match *match, blunted::intrusive_ptr<Node> fullbodySourceNode, std::map<Vector3, Vector3> &colorCoords, blunted::intrusive_ptr < Resource<Surface> > kit, std::shared_ptr<AnimCollection> animCollection);
     virtual ~Officials();
 
     void GetPlayers(std::vector<PlayerBase*> &players);
@@ -27,8 +27,8 @@ class Officials {
     virtual void FetchPutBuffers(unsigned long putTime_ms);
     virtual void Put();
 
-    boost::intrusive_ptr<Geometry> GetYellowCardGeom() { return yellowCard; }
-    boost::intrusive_ptr<Geometry> GetRedCardGeom() { return redCard; }
+    blunted::intrusive_ptr<Geometry> GetYellowCardGeom() { return yellowCard; }
+    blunted::intrusive_ptr<Geometry> GetRedCardGeom() { return redCard; }
 
   protected:
     Match *match;
@@ -37,8 +37,8 @@ class Officials {
     PlayerOfficial *linesmen[2];
     PlayerData *playerData;
 
-    boost::intrusive_ptr<Geometry> yellowCard;
-    boost::intrusive_ptr<Geometry> redCard;
+    blunted::intrusive_ptr<Geometry> yellowCard;
+    blunted::intrusive_ptr<Geometry> redCard;
 
 };
 

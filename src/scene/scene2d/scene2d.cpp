@@ -1,5 +1,7 @@
 #include "scene2d.hpp"
 
+#include <algorithm>
+
 // todo
 #include "scene/objects/image2d.hpp"
 #include "scene/objects/geometry.hpp"
@@ -18,8 +20,8 @@ namespace blunted {
 
     supportedObjectTypes.push_back(e_ObjectType_Image2D);
 
-    width = config.GetInt("context_x", 1280);
-    height = config.GetInt("context_y", 720);
+    width = config.GetInt("context_x", 1920);
+    height = config.GetInt("context_y", 1080);
     bpp = config.GetInt("context_bpp", 32);
   }
 
@@ -53,7 +55,7 @@ namespace blunted {
     subjectMutex.unlock();
   }
 
-  void Scene2D::AddObject(boost::intrusive_ptr<Object> object) {
+  void Scene2D::AddObject(blunted::intrusive_ptr<Object> object) {
     if (!SupportedObjectType(object->GetObjectType())) {
       Log(e_FatalError, "Scene2D", "AddObject", "Object type not supported");
     }
@@ -62,9 +64,9 @@ namespace blunted {
     objects.Unlock();
   }
 
-  void Scene2D::DeleteObject(boost::intrusive_ptr<Object> object) {
+  void Scene2D::DeleteObject(blunted::intrusive_ptr<Object> object) {
     objects.Lock();
-    std::vector <boost::intrusive_ptr<Object> >::iterator objIter = objects.data.begin();
+    std::vector <blunted::intrusive_ptr<Object> >::iterator objIter = objects.data.begin();
     while (objIter != objects.data.end()) {
       if ((*objIter) == object) {
         (*objIter)->Exit();
@@ -76,9 +78,9 @@ namespace blunted {
     objects.Unlock();
   }
 
-  void Scene2D::RemoveObject(boost::intrusive_ptr<Object> object) {
+  void Scene2D::RemoveObject(blunted::intrusive_ptr<Object> object) {
     objects.Lock();
-    std::vector <boost::intrusive_ptr<Object> >::iterator objIter = objects.data.begin();
+    std::vector <blunted::intrusive_ptr<Object> >::iterator objIter = objects.data.begin();
     while (objIter != objects.data.end()) {
       if ((*objIter) == object) {
         objIter = objects.data.erase(objIter);
@@ -89,7 +91,7 @@ namespace blunted {
     objects.Unlock();
   }
 
-  void Scene2D::GetObjects(e_ObjectType targetObjectType, std::vector < boost::intrusive_ptr<Object> > &gatherObjects) {
+  void Scene2D::GetObjects(e_ObjectType targetObjectType, std::vector < blunted::intrusive_ptr<Object> > &gatherObjects) {
     if (!SupportedObjectType(targetObjectType)) return;
     objects.Lock();
     int objectsSize = objects.data.size();
@@ -99,17 +101,21 @@ namespace blunted {
     objects.Unlock();
   }
 
-  bool SortObjects(const boost::intrusive_ptr<Object> &a, const boost::intrusive_ptr<Object> &b) {
+  bool SortObjects(const blunted::intrusive_ptr<Object> &a, const blunted::intrusive_ptr<Object> &b) {
     return a->GetPokePriority() < b->GetPokePriority();
   }
 
   void Scene2D::PokeObjects(e_ObjectType targetObjectType, e_SystemType targetSystemType) {
     if (!SupportedObjectType(targetObjectType)) return;
     objects.Lock();
-    std::stable_sort(objects.data.begin(), objects.data.end(), SortObjects);
+    if (!std::is_sorted(objects.data.begin(), objects.data.end(), SortObjects)) {
+      std::stable_sort(objects.data.begin(), objects.data.end(), SortObjects);
+    }
     int objectsSize = objects.data.size();
     for (int i = 0; i < objectsSize; i++) {
-      if (objects.data.at(i)->IsEnabled()) if (objects.data.at(i)->GetObjectType() == targetObjectType) objects.data.at(i)->Poke(targetSystemType);
+      if (objects.data[i]->IsEnabled() && objects.data[i]->GetObjectType() == targetObjectType) {
+        objects.data[i]->Poke(targetSystemType);
+      }
     }
     objects.Unlock();
   }

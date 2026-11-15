@@ -6,9 +6,10 @@
 #define _HPP_DEFINES
 
 #ifdef WIN32
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
-#undef NOMINMAX
 #endif
 
 #include <cstdio>
@@ -19,23 +20,35 @@
 #include <cmath>
 
 #include <algorithm>
-#include <string>
-#include <list>
-#include <vector>
-#include <map>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <deque>
+#include <functional>
+#include <iterator>
+#include <list>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <vector>
 
-#include <boost/shared_ptr.hpp>
-#include <boost/intrusive_ptr.hpp>
-#include <boost/thread/mutex.hpp>
-#include <boost/thread/condition.hpp>
-#include <boost/signals2.hpp>
-#include <boost/signals2/slot.hpp>
-#include <boost/bind.hpp>
+#include "types/intrusive_ptr.hpp"
+#include "base/signal.hpp"
 
 namespace blunted {
 
-  using namespace boost;
+  using std::shared_ptr;
+  using std::weak_ptr;
+  using std::make_shared;
+  using std::static_pointer_cast;
+  using std::dynamic_pointer_cast;
+  using std::placeholders::_1;
+  using std::placeholders::_2;
+  using std::placeholders::_3;
+  using std::placeholders::_4;
+
   typedef float real;
 
 }

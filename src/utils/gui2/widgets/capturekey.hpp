@@ -19,7 +19,7 @@ namespace blunted {
       virtual void ProcessKeyboardEvent(KeyboardEvent *event);
       int GetKeyID();
 
-      boost::signals2::signal<void(Gui2CaptureKey*)> sig_OnKey;
+      blunted::Signal<void(Gui2CaptureKey*)> sig_OnKey;
 
     protected:
       SDL_Keycode keyID;
@@ -45,7 +45,7 @@ namespace blunted {
       int GetAxisID();
       signed int GetAxisSign();
 
-      boost::signals2::signal<void(Gui2CaptureJoy*)> sig_OnJoy;
+      blunted::Signal<void(Gui2CaptureJoy*)> sig_OnJoy;
 
     protected:
       int controllerID;

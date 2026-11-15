@@ -12,6 +12,8 @@ using namespace blunted;
 
 LoadingMatchPage::LoadingMatchPage(Gui2WindowManager *windowManager, const Gui2PageData &pageData) : Gui2Page(windowManager, pageData) {
 
+  windowManager->BlackoutBackground(true);
+
   Gui2Image *loading = new Gui2Image(windowManager, "image_main_loading", 0, 0, 100, 100);
   loading->LoadImage("media/menu/main/loading01.png");
   this->AddView(loading);
@@ -23,19 +25,22 @@ LoadingMatchPage::LoadingMatchPage(Gui2WindowManager *windowManager, const Gui2P
   TeamData *teamData1 = matchData->GetTeamData(0);
   TeamData *teamData2 = matchData->GetTeamData(1);
 
+  float logoH = 14.0f;
+  float logoW = logoH / windowManager->GetAspectRatio();
+
   Gui2Caption *caption1 = new Gui2Caption(windowManager, "main_loading_team1caption", 20, 35, 40, 5, teamData1->GetName());
   float w = caption1->GetTextWidthPercent();
-  caption1->SetPosition(30 - w * 0.5, 35);
+  caption1->SetPosition(30.0f - w * 0.5f, 35.0f);
   this->AddView(caption1);
-  Gui2Image *logo1 = new Gui2Image(windowManager, "main_loading_team1logo", 25, 48, 10, 12.5);
+  Gui2Image *logo1 = new Gui2Image(windowManager, "main_loading_team1logo", 30.0f - logoW * 0.5f, 47.0f, logoW, logoH);
   this->AddView(logo1);
   logo1->LoadImage(teamData1->GetLogoUrl());
 
   Gui2Caption *caption2 = new Gui2Caption(windowManager, "main_loading_team2caption", 60, 35, 40, 5, teamData2->GetName());
   w = caption2->GetTextWidthPercent();
-  caption2->SetPosition(70 - w * 0.5, 35);
+  caption2->SetPosition(70.0f - w * 0.5f, 35.0f);
   this->AddView(caption2);
-  Gui2Image *logo2 = new Gui2Image(windowManager, "main_loading_team2logo", 65, 48, 10, 12.5);
+  Gui2Image *logo2 = new Gui2Image(windowManager, "main_loading_team2logo", 70.0f - logoW * 0.5f, 47.0f, logoW, logoH);
   this->AddView(logo2);
   logo2->LoadImage(teamData2->GetLogoUrl());
 
@@ -57,6 +62,7 @@ LoadingMatchPage::LoadingMatchPage(Gui2WindowManager *windowManager, const Gui2P
 }
 
 LoadingMatchPage::~LoadingMatchPage() {
+  windowManager->BlackoutBackground(false);
 }
 
 void LoadingMatchPage::Process() {

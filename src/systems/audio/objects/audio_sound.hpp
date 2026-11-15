@@ -24,7 +24,7 @@ namespace blunted {
       AudioSound(AudioScene *audioScene);
       virtual ~AudioSound();
 
-      virtual boost::intrusive_ptr<Interpreter> GetInterpreter(e_ObjectType objectType);
+      virtual blunted::intrusive_ptr<Interpreter> GetInterpreter(e_ObjectType objectType);
 
       virtual void SetPosition(const Vector3 &newPosition);
       virtual Vector3 GetPosition() const;
@@ -41,7 +41,7 @@ namespace blunted {
       virtual void SetPitch(float pitch) { this->pitch = pitch; }
       virtual float GetPitch() const { return pitch; }
 
-      boost::intrusive_ptr < Resource<AudioSoundBuffer> > audioSoundBuffer;
+      blunted::intrusive_ptr < Resource<AudioSoundBuffer> > audioSoundBuffer;
 
     protected:
       Vector3 position;
@@ -58,7 +58,7 @@ namespace blunted {
       AudioSound_SoundInterpreter(AudioSound *caller);
 
       virtual e_SystemType GetSystemType() const { return e_SystemType_Audio; }
-      virtual void OnLoad(boost::intrusive_ptr < Resource<SoundBuffer> > resource);
+      virtual void OnLoad(blunted::intrusive_ptr < Resource<SoundBuffer> > resource);
       virtual void OnUnload();
       inline virtual void OnMove(const Vector3 &position);
       inline virtual void OnPoke();

@@ -14,11 +14,13 @@
 
 #include "managers/resourcemanagerpool.hpp"
 
+#include <filesystem>
+
 Team::Team(int id, Match *match, TeamData *teamData) : id(id), match(match), teamData(teamData) {
   assert(id == 0 || id == 1);
   assert(teamData->GetPlayerNum() >= playerNum); // does team have enough players?
 
-  teamNode = boost::intrusive_ptr<Node>(new Node("team node #" + int_to_str(id)));
+  teamNode = blunted::intrusive_ptr<Node>(new Node("team node #" + int_to_str(id)));
   teamNode->SetLocalMode(e_LocalMode_Absolute);
   match->GetDynamicNode()->AddNode(teamNode);
 
@@ -59,7 +61,7 @@ void Team::Exit() {
   match->GetDynamicNode()->DeleteNode(teamNode);
 }
 
-void Team::InitPlayers(boost::intrusive_ptr<Node> fullbodyNode, std::map<Vector3, Vector3> &colorCoords) {
+void Team::InitPlayers(blunted::intrusive_ptr<Node> fullbodyNode, std::map<Vector3, Vector3> &colorCoords) {
 
   // first, load 1 instance of a player
 
@@ -86,7 +88,7 @@ void Team::InitPlayers(boost::intrusive_ptr<Node> fullbodyNode, std::map<Vector3
       //printf("%i player id\n", player->GetID());
       if (GetFormationEntry(player->GetID()).role != e_PlayerRole_GK) {
         kitFilename = GetTeamData()->GetKitUrl() + "_kit_0" + int_to_str(GetMenuTask()->GetTeamKitNum(GetID())) + ".png";
-        if (!boost::filesystem::exists(kitFilename)) kitFilename = (GetID() == 0) ? "media/textures/almost_white.png" : "media/textures/almost_black.png";
+        if (!std::filesystem::exists(kitFilename)) kitFilename = (GetID() == 0) ? "media/textures/almost_white.png" : "media/textures/almost_black.png";
       } else {
         kitFilename = "media/objects/players/textures/goalie_kit.png";
       }
@@ -558,10 +560,10 @@ void Team::SetKitNumber(int num) {
   std::string kitNumberString = int_to_str(num);
   if (kitNumberString.size() < 2) kitNumberString = "0" + kitNumberString;
   std::string kitFilename = GetTeamData()->GetKitUrl() + "_kit_" + kitNumberString + ".png";
-  if (!boost::filesystem::exists(kitFilename)) kitFilename = GetID() == 0 ? "media/textures/white.png" : "media/textures/black.png";
+  if (!std::filesystem::exists(kitFilename)) kitFilename = GetID() == 0 ? "media/textures/white.png" : "media/textures/black.png";
 
   // new kits on the block!
-  boost::intrusive_ptr < Resource<Surface> > newKit = ResourceManagerPool::GetInstance().GetManager<Surface>(e_ResourceType_Surface)->Fetch(kitFilename);
+  blunted::intrusive_ptr < Resource<Surface> > newKit = ResourceManagerPool::GetInstance().GetManager<Surface>(e_ResourceType_Surface)->Fetch(kitFilename);
 
   for (unsigned int i = 0; i < players.size(); i++) {
     if (players.at(i)->IsActive()) {

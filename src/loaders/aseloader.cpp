@@ -25,7 +25,7 @@ namespace blunted {
   // ----- encapsulating load function
 
   // load file into resource
-  void ASELoader::Load(std::string filename, boost::intrusive_ptr < Resource <GeometryData> > resource) {
+  void ASELoader::Load(std::string filename, blunted::intrusive_ptr < Resource <GeometryData> > resource) {
     triangleCount = 0;
     s_tree *data = tree_load(filename);
     Build(data, resource);
@@ -36,7 +36,7 @@ namespace blunted {
 
   // ----- interpreter for the .ase treedata
 
-  void ASELoader::Build(const s_tree *data, boost::intrusive_ptr < Resource <GeometryData> > resource) {
+  void ASELoader::Build(const s_tree *data, blunted::intrusive_ptr < Resource <GeometryData> > resource) {
 
     assert(data);
 
@@ -97,7 +97,7 @@ namespace blunted {
     }
   }
 
-  void ASELoader::BuildTriangleMesh(const s_tree *data, boost::intrusive_ptr < Resource <GeometryData> > resource, std::vector <s_Material> materialList) {
+  void ASELoader::BuildTriangleMesh(const s_tree *data, blunted::intrusive_ptr < Resource <GeometryData> > resource, std::vector <s_Material> materialList) {
     assert(data);
 
     std::string name = data->entries.at(0)->values.at(0).substr(1, data->entries.at(0)->values.at(0).length() - 2);

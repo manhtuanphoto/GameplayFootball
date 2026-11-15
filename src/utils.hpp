@@ -8,14 +8,13 @@
 #include "gamedefines.hpp"
 
 #include "scene/objects/camera.hpp"
-
-#include <boost/circular_buffer.hpp>
+#include "base/circular_buffer.hpp"
 
 using namespace blunted;
 
 float GetQuantizedDirectionBias();
 void QuantizeDirection(Vector3 &inputDirection, float bias = 1.0f);
-Vector3 GetProjectedCoord(const Vector3 &pos3D, boost::intrusive_ptr<Camera> camera);
+Vector3 GetProjectedCoord(const Vector3 &pos3D, blunted::intrusive_ptr<Camera> camera);
 
 int GetVelocityID(e_Velocity velo, bool treatDribbleAsWalk = false);
 
@@ -94,7 +93,7 @@ template <typename T> class TemporalSmoother {
   protected:
     T MixData(const T &data1, const T &data2, float bias = 0.0f) const;
 
-    boost::circular_buffer< TemporalValue<T> > values;
+    CircularBuffer< TemporalValue<T> > values;
     unsigned int snapshotSize;
 
 };

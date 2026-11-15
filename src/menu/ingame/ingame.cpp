@@ -29,18 +29,22 @@ IngamePage::IngamePage(Gui2WindowManager *windowManager, const Gui2PageData &pag
   Gui2Button *buttonVisualOptions = new Gui2Button(windowManager, "button_visualoptions", 0, 0, 30, 3, "visual options");
   Gui2Button *buttonSystemSettings = new Gui2Button(windowManager, "button_systemsettings", 0, 0, 30, 3, "system settings");
   Gui2Button *buttonReplay = new Gui2Button(windowManager, "button_replay", 0, 0, 30, 3, "replay");
+  Gui2Button *buttonSandbox = new Gui2Button(windowManager, "button_sandbox", 0, 0, 30, 3, "sandbox (AI vs AI)");
+  Gui2Button *buttonFreeKick = new Gui2Button(windowManager, "button_freekick", 0, 0, 30, 3, "free kick mode");
   Gui2Button *buttonPreQuit = new Gui2Button(windowManager, "button_quit", 0, 0, 30, 3, "forfeit match");
 
-  buttonGamePlan->sig_OnClick.connect(boost::bind(&IngamePage::GoGamePlan, this));
-  buttonControllerSelect->sig_OnClick.connect(boost::bind(&IngamePage::GoControllerSelect, this));
-  buttonCameraSettings->sig_OnClick.connect(boost::bind(&IngamePage::GoCameraSettings, this));
-  buttonVisualOptions->sig_OnClick.connect(boost::bind(&IngamePage::GoVisualOptions, this));
-  buttonSystemSettings->sig_OnClick.connect(boost::bind(&IngamePage::GoSystemSettings, this));
-  buttonReplay->sig_OnClick.connect(boost::bind(&IngamePage::GoReplay, this));
-  buttonPreQuit->sig_OnClick.connect(boost::bind(&IngamePage::GoPreQuit, this));
+  buttonGamePlan->sig_OnClick.connect(blunted::Bind(&IngamePage::GoGamePlan, this));
+  buttonControllerSelect->sig_OnClick.connect(blunted::Bind(&IngamePage::GoControllerSelect, this));
+  buttonCameraSettings->sig_OnClick.connect(blunted::Bind(&IngamePage::GoCameraSettings, this));
+  buttonVisualOptions->sig_OnClick.connect(blunted::Bind(&IngamePage::GoVisualOptions, this));
+  buttonSystemSettings->sig_OnClick.connect(blunted::Bind(&IngamePage::GoSystemSettings, this));
+  buttonReplay->sig_OnClick.connect(blunted::Bind(&IngamePage::GoReplay, this));
+  buttonSandbox->sig_OnClick.connect(blunted::Bind(&IngamePage::GoSandbox, this));
+  buttonFreeKick->sig_OnClick.connect(blunted::Bind(&IngamePage::GoFreeKick, this));
+  buttonPreQuit->sig_OnClick.connect(blunted::Bind(&IngamePage::GoPreQuit, this));
 
 
-  Gui2Grid *grid = new Gui2Grid(windowManager, "grid", 10, 10, 80, 80);
+  Gui2Grid *grid = new Gui2Grid(windowManager, "grid", 10, 8, 80, 84);
 
   grid->AddView(buttonGamePlan, 0, 0);
   grid->AddView(buttonControllerSelect, 1, 0);
@@ -48,7 +52,9 @@ IngamePage::IngamePage(Gui2WindowManager *windowManager, const Gui2PageData &pag
   grid->AddView(buttonVisualOptions, 3, 0);
   grid->AddView(buttonSystemSettings, 4, 0);
   grid->AddView(buttonReplay, 5, 0);
-  grid->AddView(buttonPreQuit, 6, 0);
+  grid->AddView(buttonSandbox, 6, 0);
+  grid->AddView(buttonFreeKick, 7, 0);
+  grid->AddView(buttonPreQuit, 8, 0);
 
   grid->UpdateLayout(0.5);
 
@@ -91,6 +97,18 @@ void IngamePage::GoReplay() {
   CreatePage(e_PageID_Replay);
 }
 
+void IngamePage::GoSandbox() {
+  this->Exit();
+  GetMenuTask()->SetMenuAction(e_MenuAction_Sandbox);
+  delete this;
+}
+
+void IngamePage::GoFreeKick() {
+  this->Exit();
+  GetMenuTask()->SetMenuAction(e_MenuAction_FreeKick);
+  delete this;
+}
+
 void IngamePage::GoPreQuit() {
   CreatePage(e_PageID_PreQuit);
 }
@@ -115,8 +133,8 @@ PreQuitPage::PreQuitPage(Gui2WindowManager *windowManager, const Gui2PageData &p
   Gui2Caption *restartCaption = new Gui2Caption(windowManager, "caption_prequit_info", 0, 0, 100, 3, "are you sure you want to forfeit?");
   Gui2Button *okButton = new Gui2Button(windowManager, "button_prequit_ok", 10, 0, 30, 3, "OK, forfeit");
   Gui2Button *cancelButton = new Gui2Button(windowManager, "button_prequit_cancel", 10, 0, 30, 3, "Continue match");
-  okButton->sig_OnClick.connect(boost::bind(&PreQuitPage::GoMenu, this));
-  cancelButton->sig_OnClick.connect(boost::bind(&PreQuitPage::GoBack, this));
+  okButton->sig_OnClick.connect(blunted::Bind(&PreQuitPage::GoMenu, this));
+  cancelButton->sig_OnClick.connect(blunted::Bind(&PreQuitPage::GoBack, this));
 
   Gui2Grid *grid = new Gui2Grid(windowManager, "grid_prequit", 30, 42.5, 40, 15);
 

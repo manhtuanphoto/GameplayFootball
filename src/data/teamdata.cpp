@@ -9,8 +9,7 @@
 #include "base/utils.hpp"
 
 #include "../main.hpp"
-
-#include <boost/algorithm/string.hpp>
+#include <cctype>
 
 Vector3 GetDefaultRolePosition(e_PlayerRole role) {
   switch (role) {
@@ -87,8 +86,9 @@ TeamData::TeamData(int teamDatabaseID) : databaseID(teamDatabaseID) {
 
   if (shortName.compare("") == 0) {
     shortName = name;
-    shortName.erase(remove_if(shortName.begin(), shortName.end(), isspace), shortName.end());
-    shortName = boost::to_upper_copy(shortName.substr(0, 3));
+    shortName.erase(std::remove_if(shortName.begin(), shortName.end(), [](unsigned char c) { return std::isspace(c); }), shortName.end());
+    shortName = shortName.substr(0, 3);
+    std::transform(shortName.begin(), shortName.end(), shortName.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
   }
 
   delete result;

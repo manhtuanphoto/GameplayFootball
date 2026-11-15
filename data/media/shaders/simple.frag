@@ -62,6 +62,5 @@ void main(void) {
 
   stdout0 = vec4(base.rgb, spec);
   stdout1 = vec4(bumpNormal.xyz, materialparams.x);
-  //gl_FragData[2] = vec4(frag_position.xyz, illumination); // *fixed* position data is needed for the ssao ambient shader. maybe a bit inefficient? in the other shaders, position is calculated on the fly
-  stdout2 = vec4(0, 0, 0, illumination); // free channels! for future use, methinks :)
+  stdout2 = vec4(illumination, 0.0, 0.0, illumination);
 }

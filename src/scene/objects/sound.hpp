@@ -36,8 +36,8 @@ namespace blunted {
       virtual void SetPitch(float pitch);
       virtual float GetPitch() const;
 
-      void SetSoundBuffer(boost::intrusive_ptr < Resource<SoundBuffer> > soundBuffer);
-      boost::intrusive_ptr < Resource<SoundBuffer> > GetSoundBuffer();
+      void SetSoundBuffer(blunted::intrusive_ptr < Resource<SoundBuffer> > soundBuffer);
+      blunted::intrusive_ptr < Resource<SoundBuffer> > GetSoundBuffer();
 
       virtual void Poke(e_SystemType targetSystemType);
 
@@ -51,14 +51,14 @@ namespace blunted {
       float gain;
       float pitch;
 
-      boost::intrusive_ptr < Resource<SoundBuffer> > soundBuffer;
+      blunted::intrusive_ptr < Resource<SoundBuffer> > soundBuffer;
 
   };
 
   class ISoundInterpreter : public Interpreter {
 
     public:
-      virtual void OnLoad(boost::intrusive_ptr < Resource<SoundBuffer> > resource) = 0;
+      virtual void OnLoad(blunted::intrusive_ptr < Resource<SoundBuffer> > resource) = 0;
       virtual void OnUnload() = 0;
       virtual void OnMove(const Vector3 &position) = 0;
       virtual void OnPoke() = 0;

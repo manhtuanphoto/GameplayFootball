@@ -20,6 +20,7 @@
 #include <cmath>
 
 #include "AIsupport/AIfunctions.hpp"
+#include "AIsupport/ai_adaptive_pipeline.hpp"
 
 #include "team.hpp"
 #include "match.hpp"
@@ -47,6 +48,8 @@ TeamAIController::TeamAIController(Team *team) : team(team) {
   attackingRunPlayer = 0;
   endApplyTeamPressure_ms = 0;
   teamPressurePlayer = 0;
+  secondTeamPressurePlayer = 0;
+  secondTeamPressureTargetID = -1;
   endApplyKeeperRush_ms = 0;
   forwardSupportPlayer = 0;
 
@@ -171,31 +174,52 @@ void TeamAIController::Process() {
   std::sort(tacticalOpponentInfo.begin(), tacticalOpponentInfo.end(), ReverseSortTacticalOpponentInfo);
 
 
-  // team pressure
+  // collective team pressing (1st ball-presser + 2nd passing-lane cover shadow)
 
-/* DISABLED, interferes with other defense AI code for now
-  if (team->GetHumanGamerCount() == 0) {
+  if (match->IsInPlay() && !match->IsInSetPiece()) {
     if (match->GetBestPossessionTeamID() != team->GetID()) {
+      if (match->GetActualTime_ms() % 300 == 0 || endApplyTeamPressure_ms <= match->GetActualTime_ms()) {
+        Player *opp = match->GetTeam(abs(team->GetID() - 1))->GetDesignatedTeamPossessionPlayer();
+        if (opp) {
+          float difficulty = match->GetMatchDifficulty();
+          Vector3 ownGoalPos = Vector3(pitchHalfW * team->GetSide(), 0, 0);
+          Vector3 dangerPos = Vector3(pitchHalfW * team->GetSide(), opp->GetPosition().coords[1] * 0.5f, 0);
+          float oppDangerDistance = (opp->GetPosition() - dangerPos).GetLength();
 
-      bool opponentFreeRun = false;
-      Player *opp = match->GetTeam(abs(team->GetID() - 1))->GetDesignatedTeamPossessionPlayer();
-      Vector3 dangerPos = Vector3(pitchHalfW * team->GetSide(), opp->GetPosition().coords[1] * 0.5, 0);
-      float oppDangerDistance = (opp->GetPosition() - dangerPos).GetLength();
-      Vector3 adaptedGoalPos = Vector3(pitchHalfW * team->GetSide(), 0, 0) * 0.5 + opp->GetPosition() * 0.5;
-      float oppGoalDistance = (opp->GetPosition() - adaptedGoalPos).GetLength();
-      Player *p = AI_GetClosestPlayer(team, adaptedGoalPos, false);
-      float usGoalDistance = (p->GetPosition() - adaptedGoalPos).GetLength();
-      if (usGoalDistance > oppGoalDistance - 3.2) opponentFreeRun = true;
+          Vector3 adaptedGoalPos = ownGoalPos * 0.5f + opp->GetPosition() * 0.5f;
+          float oppGoalDistance = (opp->GetPosition() - adaptedGoalPos).GetLength();
+          Player *closestDef = AI_GetClosestPlayer(team, adaptedGoalPos, false);
+          float usGoalDistance = closestDef ? (closestDef->GetPosition() - adaptedGoalPos).GetLength() : 0.0f;
+          bool opponentFreeRun = (usGoalDistance > oppGoalDistance - 3.5f);
 
-      bool closeEnemy = false;
-      if (oppDangerDistance < 20) closeEnemy = true;
+          // Press zone scales with tactical offensiveness and difficulty
+          float pressZoneX = (-10.0f - 24.0f * offensivenessBias * (0.4f + 0.6f * difficulty));
+          bool inPressingBlock = (opp->GetPosition().coords[0] * team->GetSide() > pressZoneX);
+          bool closeEnemy = (oppDangerDistance < 30.0f);
 
-      if (opponentFreeRun || closeEnemy) {
-        ApplyTeamPressure();
+          // Trigger counter-pressing (gegenpressing) when ball is loose/bouncing or opp just gained control
+          bool counterPressTrigger = (opp->GetPossessionDuration_ms() < 1200 &&
+                                      oppDangerDistance < 45.0f + 20.0f * offensivenessBias);
+
+          if (team->GetHumanGamerCount() == 0) {
+            if (opponentFreeRun || closeEnemy || inPressingBlock || counterPressTrigger) {
+              ApplyTeamPressure();
+            }
+          } else {
+            // Assist human player's AI teammates when opponent threatens or breaks free
+            if (opponentFreeRun || oppDangerDistance < 24.0f || (counterPressTrigger && offensivenessBias > 0.52f)) {
+              ApplyTeamPressure();
+            }
+          }
+        }
       }
+    } else {
+      endApplyTeamPressure_ms = 0;
+      teamPressurePlayer = 0;
+      secondTeamPressurePlayer = 0;
+      secondTeamPressureTargetID = -1;
     }
   }
-*/
 
 
   // trigger attacking runs
@@ -421,6 +445,8 @@ Vector3 TeamAIController::GetAdaptedFormationPosition(Player *player, bool useDy
 
   Vector3 desiredPos = AI_GetAdaptedFormationPosition(team->GetMatch(), player, backXBound, frontXBound, lowYBound, highYBound, xFocus, xFocusStrength, yFocus, yFocusStrength, microFocus, microFocusStrength, midfieldFocus, midfieldFocusStrength, useDynamicFormationPosition);
 
+  desiredPos = AIAdaptiveRegistry::Instance().AdaptFormationBaseShape(team, player, role, possessionBias, desiredPos);
+
   desiredPos.coords[0] = clamp(desiredPos.coords[0], -pitchHalfW, pitchHalfW);
   desiredPos.coords[1] = clamp(desiredPos.coords[1], -pitchHalfH, pitchHalfH);
 
@@ -588,33 +614,42 @@ void TeamAIController::CalculateManMarking() {
 
   // new method
 
-  int numMarkedOpponents = 3;//std::min(match->GetTeam(0)->GetActivePlayerCount(), match->GetTeam(1)->GetActivePlayerCount());
+  int numMarkedOpponents = 4;
 
   const std::vector<TacticalOpponentInfo> &oppInfo = GetTacticalOpponentInfo();
 
   std::vector<Player*> players;
   team->GetActivePlayers(players);
 
-  // reset previous man marking
+  bool activeTeamPress = (endApplyTeamPressure_ms > match->GetActualTime_ms() && teamPressurePlayer != 0);
+  Player *oppCarrier = match->GetTeam(abs(team->GetID() - 1))->GetDesignatedTeamPossessionPlayer();
+
+  // reset previous man marking (keep active ball-presser locked onto ball carrier)
   for (unsigned int i = 0; i < players.size(); i++) {
-    players.at(i)->SetManMarkingID(-1);
+    if (activeTeamPress && players.at(i) == teamPressurePlayer && oppCarrier) {
+      players.at(i)->SetManMarkingID(oppCarrier->GetID());
+    } else {
+      players.at(i)->SetManMarkingID(-1);
+    }
   }
 
   // most dangerous opponent gets closest player to cover him, and so on
   // (oppInfo is already sorted, most dangerous first. this is done in this->process() which is called earlier from team->process())
   for (unsigned int opp = 0; opp < (unsigned int)std::min((signed int)oppInfo.size(), numMarkedOpponents); opp++) {
 
+    Player *oppPlayer = oppInfo.at(opp).player;
+    if (activeTeamPress && oppCarrier && oppPlayer == oppCarrier) continue;
+
     Player *closestPlayer = 0;
     float bestMarkingQuality = -1.0f;
     std::vector<Player*>::iterator closestPlayerIter;
     std::vector<Player*>::iterator iter = players.begin();
 
-    Player *oppPlayer = oppInfo.at(opp).player;
-
     // find closest player for this opponent
     while (iter != players.end()) {
 
-      if ((*iter)->GetFormationEntry().role != e_PlayerRole_GK) {
+      if ((*iter)->GetFormationEntry().role != e_PlayerRole_GK &&
+          !(activeTeamPress && (*iter) == teamPressurePlayer)) {
 
         float markingQuality = CalculateMarkingQuality((*iter), oppPlayer);
 
@@ -819,8 +854,8 @@ void TeamAIController::PrepareSetPiece(e_SetPiece setPiece, int takerTeamID) {
         highYBound = pitchHalfH * 0.7;
         Vector3 basePos = AI_GetAdaptedFormationPosition(match, players.at(i), backXBound, frontXBound, lowYBound, highYBound, xFocus, xFocusStrength, yFocus, yFocusStrength, ballPos, 0.4, 0, 0, false);
 
-        // keep distance
-        if (!isTakerTeam) {
+        // keep distance (except defending GK who guards the goal line!)
+        if (!isTakerTeam && players.at(i)->GetFormationEntry().role != e_PlayerRole_GK) {
           if ((basePos - match->GetBall()->Predict(0).Get2D()).GetLength() < 9.15) {
             basePos = match->GetBall()->Predict(0).Get2D() + (basePos - match->GetBall()->Predict(0).Get2D()).GetNormalized() * 9.15;
           }
@@ -829,15 +864,48 @@ void TeamAIController::PrepareSetPiece(e_SetPiece setPiece, int takerTeamID) {
         players.at(i)->ResetPosition(basePos, match->GetBall()->Predict(0).Get2D());
       }
 
-      // wall
-      if (!isTakerTeam && (match->GetBall()->Predict(0).Get2D() - Vector3(team->GetSide() * pitchHalfW, 0, 0)).GetLength() < 40.0) {
-        std::vector<Player*> result;
-        AI_GetClosestPlayers(team, match->GetBall()->Predict(0).Get2D(), false, result, 3);
-        for (unsigned int i = 0; i < result.size(); i++) {
-          Vector3 toGoal = (Vector3(team->GetSide() * pitchHalfW, 0, 0) - match->GetBall()->Predict(0).Get2D()).GetNormalized(0);
-          toGoal += Vector3(0, 1.0 - i, 0) * 0.07;
-          toGoal.Normalize();
-          result.at(i)->ResetPosition(match->GetBall()->Predict(0).Get2D() + toGoal * 9.15f, match->GetBall()->Predict(0).Get2D());
+      // Defensive outfield wall (never pull the Goalkeeper into the wall!) + GK goal-line positioning
+      if (!isTakerTeam) {
+        Vector3 fkBallPos = match->GetBall()->Predict(0).Get2D();
+        Vector3 defGoalCenter(team->GetSide() * pitchHalfW, 0, 0);
+        float fkDistToGoal = (fkBallPos - defGoalCenter).GetLength();
+
+        if (fkDistToGoal < 39.0f) {
+          std::multimap<float, Player*> outfieldByDist;
+          Player *defGK = 0;
+          for (unsigned int i = 0; i < players.size(); i++) {
+            if (!players.at(i)->IsActive()) continue;
+            if (players.at(i)->GetFormationEntry().role == e_PlayerRole_GK) {
+              defGK = players.at(i);
+              continue;
+            }
+            float d = (players.at(i)->GetPosition() - fkBallPos).GetLength();
+            outfieldByDist.insert(std::pair<float, Player*>(d, players.at(i)));
+          }
+
+          unsigned int wallCount = (fkDistToGoal < 27.5f) ? 4 : 3;
+          // Anchor wall toward near-post side of goal mouth
+          float nearPostBiasY = clamp(fkBallPos.coords[1] * 0.14f, -1.65f, 1.65f);
+          Vector3 wallTargetGoal(team->GetSide() * pitchHalfW, nearPostBiasY, 0);
+          Vector3 toGoal = (wallTargetGoal - fkBallPos).GetNormalized(Vector3(team->GetSide(), 0, 0));
+          Vector3 wallLateral(-toGoal.coords[1], toGoal.coords[0], 0.0f);
+          // Orient lateral vector toward center so extra wall men cover inner side
+          if (fkBallPos.coords[1] * wallLateral.coords[1] > 0.0f) wallLateral = -wallLateral;
+
+          Vector3 wallCenter = fkBallPos + toGoal * 9.20f;
+          std::multimap<float, Player*>::iterator wIter = outfieldByDist.begin();
+          for (unsigned int w = 0; w < wallCount && wIter != outfieldByDist.end(); w++, ++wIter) {
+            float offsetIdx = (float)w - 1.0f; // -1, 0, +1, +2
+            Vector3 wallSpot = wallCenter + wallLateral * (offsetIdx * 0.56f);
+            wIter->second->ResetPosition(wallSpot, fkBallPos);
+          }
+
+          if (defGK) {
+            // Position GK on the goal line slightly covering the far side of the wall
+            float gkY = clamp(-fkBallPos.coords[1] * 0.08f, -1.55f, 1.55f);
+            Vector3 gkSpot((pitchHalfW - 0.55f) * team->GetSide(), gkY, 0.0f);
+            defGK->ResetPosition(gkSpot, fkBallPos);
+          }
         }
       }
 
@@ -890,29 +958,50 @@ void TeamAIController::PrepareSetPiece(e_SetPiece setPiece, int takerTeamID) {
   }
 
   if (isTakerTeam) {
-    taker = AI_GetClosestPlayer(team, match->GetBall()->Predict(0).Get2D(), false);
+    Vector3 spBallPos = match->GetBall()->Predict(0).Get2D();
+    Vector3 oppGoalCenter(-team->GetSide() * pitchHalfW, 0, 0);
+    float distToOppGoal = (spBallPos - oppGoalCenter).GetLength();
+
+    taker = 0;
+    if (setPiece == e_SetPiece_FreeKick && distToOppGoal < 38.0f) {
+      // Select best outfield free-kick specialist (shot + curve/highpass)
+      float bestRating = -1.0f;
+      for (unsigned int i = 0; i < players.size(); i++) {
+        if (!players.at(i)->IsActive() || players.at(i)->GetFormationEntry().role == e_PlayerRole_GK) continue;
+        float fkRating = players.at(i)->GetStat("technical_shot") * 0.68f +
+                         players.at(i)->GetStat("technical_highpass") * 0.32f;
+        if (fkRating > bestRating) {
+          bestRating = fkRating;
+          taker = players.at(i);
+        }
+      }
+    }
+    if (!taker) {
+      taker = AI_GetClosestPlayer(team, spBallPos, false);
+    }
 
     if (setPiece == e_SetPiece_ThrowIn || setPiece == e_SetPiece_KickOff) {
-      taker->ResetPosition(match->GetBall()->Predict(0).Get2D() + match->GetBall()->Predict(0).Get2D().GetNormalized(Vector3(0, -team->GetSide(), 0)) * 0.3f, match->GetBall()->Predict(0).Get2D());
+      taker->ResetPosition(spBallPos + spBallPos.GetNormalized(Vector3(0, -team->GetSide(), 0)) * 0.3f, spBallPos);
     } else if (setPiece == e_SetPiece_FreeKick) {
-      taker->ResetPosition(match->GetBall()->Predict(0).Get2D() + Vector3(team->GetSide(), 0, 0) * 2.3f, match->GetBall()->Predict(0).Get2D());
+      Vector3 runupDir = (spBallPos - oppGoalCenter).GetNormalized(Vector3(team->GetSide(), 0, 0));
+      taker->ResetPosition(spBallPos + runupDir * 2.35f, oppGoalCenter);
     } else {
-      taker->ResetPosition(match->GetBall()->Predict(0).Get2D() + match->GetBall()->Predict(0).Get2D().GetNormalized(Vector3(0, -team->GetSide(), 0)) * 2.3f, match->GetBall()->Predict(0).Get2D());
+      taker->ResetPosition(spBallPos + spBallPos.GetNormalized(Vector3(0, -team->GetSide(), 0)) * 2.3f, spBallPos);
     }
     if (setPiece == e_SetPiece_ThrowIn) {
       taker->SelectRetainAnim();
     }
     if (setPiece == e_SetPiece_Penalty) {
-      taker->ResetPosition(match->GetBall()->Predict(0).Get2D() + Vector3(team->GetSide(), 0, 0) * 3.0, match->GetBall()->Predict(0).Get2D());
+      taker->ResetPosition(spBallPos + Vector3(team->GetSide(), 0, 0) * 3.0, spBallPos);
     }
 
   } else taker = 0;
 
-  // keep distance from ball
+  // keep distance from ball (never push defending GK off the goal line)
   float minDistance = 2.0;
   if (!isTakerTeam) minDistance = 5.0;
   for (unsigned int i = 0; i < players.size(); i++) {
-    if (players.at(i) != taker) {
+    if (players.at(i) != taker && (isTakerTeam || players.at(i)->GetFormationEntry().role != e_PlayerRole_GK)) {
       Vector3 toBall = players.at(i)->GetPosition() - match->GetBall()->Predict(0).Get2D();
       float ballDistance = (toBall).GetLength();
       if (ballDistance < minDistance) players.at(i)->ResetPosition(players.at(i)->GetPosition() + toBall.GetNormalized(0) * minDistance, match->GetBall()->Predict(0).Get2D());
@@ -928,19 +1017,109 @@ void TeamAIController::ApplyAttackingRun(Player *manualPlayer) {
 }
 
 void TeamAIController::ApplyTeamPressure() {
-  endApplyTeamPressure_ms = match->GetActualTime_ms() + 500;
+  endApplyTeamPressure_ms = match->GetActualTime_ms() + 450;
 
-  Player *opp = match->GetTeam(abs(team->GetID() - 1))->GetBestPossessionPlayer();
-  Vector3 opponentPos = opp->GetPosition() + opp->GetMovement() * 0.24f;
+  Team *oppTeam = match->GetTeam(abs(team->GetID() - 1));
+  Player *opp = oppTeam->GetBestPossessionPlayer();
+  if (!opp) opp = oppTeam->GetDesignatedTeamPossessionPlayer();
+  if (!opp) return;
 
-  teamPressurePlayer = AI_GetClosestPlayer(team, opponentPos + Vector3(team->GetSide() * 1.0f, 0, 0), true, team->GetGoalie());
+  Vector3 opponentPos = opp->GetPosition() + opp->GetMovement() * 0.22f;
+  Vector3 idealPressSpot = opponentPos + Vector3(team->GetSide() * 1.1f, 0, 0);
+  Vector3 ownGoalPos = Vector3(pitchHalfW * team->GetSide(), 0, 0);
+  float oppGoalDist = (opponentPos - ownGoalPos).GetLength();
+
+  std::vector<Player*> candidates;
+  team->GetActivePlayers(candidates);
+
+  Player *bestPresser = 0;
+  float bestCost = 100000.0f;
+
+  for (unsigned int i = 0; i < candidates.size(); i++) {
+    Player *cand = candidates.at(i);
+    if (cand->GetFormationEntry().role == e_PlayerRole_GK) continue;
+    if (team->IsHumanControlled(cand->GetID())) continue;
+
+    Vector3 candPos = cand->GetPosition() + cand->GetMovement() * 0.14f;
+    float dist = (candPos - idealPressSpot).GetLength();
+
+    // Hysteresis: keep current presser unless someone else is noticeably better
+    if (cand == teamPressurePlayer) dist -= 2.2f;
+
+    // Stamina penalty when exhausted
+    float staminaInv = cand->GetFatigueFactorInv();
+    dist += (1.0f - clamp(staminaInv, 0.2f, 1.0f)) * 5.0f;
+
+    // Prefer goal-side defenders/midfielders rather than chasing hopelessly from far behind
+    float goalSideDelta = (candPos.coords[0] - opponentPos.coords[0]) * team->GetSide();
+    if (goalSideDelta < -3.0f) {
+      dist += clamp(-goalSideDelta * 0.35f, 0.0f, 6.0f);
+    }
+
+    // Protect defensive line integrity: avoid dragging a CB far ahead of offsideTrapX
+    e_PlayerRole dynRole = cand->GetDynamicFormationEntry().role;
+    if (dynRole == e_PlayerRole_CB && oppGoalDist > 20.0f) {
+      float aheadOfLine = (offsideTrapX - opponentPos.coords[0]) * team->GetSide();
+      if (aheadOfLine > 3.5f) {
+        dist += 13.0f;
+      }
+    }
+
+    if (dist < bestCost) {
+      bestCost = dist;
+      bestPresser = cand;
+    }
+  }
+
+  teamPressurePlayer = bestPresser;
+  if (teamPressurePlayer && bestCost < 26.0f) {
+    teamPressurePlayer->SetManMarkingID(opp->GetID());
+  } else {
+    teamPressurePlayer = 0;
+  }
+
+  // Select 2nd presser (cover shadow on the most dangerous short passing option)
+  secondTeamPressurePlayer = 0;
+  secondTeamPressureTargetID = -1;
 
   if (teamPressurePlayer) {
-    // switch man marking
-    int prevMarking = teamPressurePlayer->GetManMarkingID();
-    teamPressurePlayer->SetManMarkingID(opp->GetID());
+    Player *bestPassOption = 0;
+    float bestOptionThreat = -1.0f;
+    for (unsigned int i = 0; i < tacticalOpponentInfo.size(); i++) {
+      Player *oppMate = tacticalOpponentInfo.at(i).player;
+      if (oppMate == opp || oppMate->GetFormationEntry().role == e_PlayerRole_GK) continue;
+      float d = (oppMate->GetPosition() - opponentPos).GetLength();
+      if (d > 4.5f && d < 26.0f) {
+        float threat = tacticalOpponentInfo.at(i).dangerFactor * (1.0f - NormalizedClamp(d, 5.0f, 26.0f) * 0.45f);
+        if (threat > bestOptionThreat) {
+          bestOptionThreat = threat;
+          bestPassOption = oppMate;
+        }
+      }
+    }
 
-    //SetRedDebugPilon(teamPressurePlayer->GetPosition());
+    if (bestPassOption) {
+      Vector3 laneSpot = opponentPos * 0.38f + (bestPassOption->GetPosition() + bestPassOption->GetMovement() * 0.2f) * 0.62f;
+      float bestSecondCost = 16.0f; // only shade if reasonably close to the lane
+      for (unsigned int i = 0; i < candidates.size(); i++) {
+        Player *cand = candidates.at(i);
+        if (cand == teamPressurePlayer || cand->GetFormationEntry().role == e_PlayerRole_GK) continue;
+        if (team->IsHumanControlled(cand->GetID())) continue;
+        e_PlayerRole dynRole = cand->GetDynamicFormationEntry().role;
+        // Never pull CBs out for secondary cover-shadow pressing
+        if (dynRole == e_PlayerRole_CB) continue;
+        if ((dynRole == e_PlayerRole_LB || dynRole == e_PlayerRole_RB) && oppGoalDist > 28.0f) continue;
+
+        float cost = (cand->GetPosition() - laneSpot).GetLength();
+        if (cand == secondTeamPressurePlayer) cost -= 1.8f;
+        cost += (1.0f - clamp(cand->GetFatigueFactorInv(), 0.2f, 1.0f)) * 4.0f;
+        if (cost < bestSecondCost) {
+          bestSecondCost = cost;
+          secondTeamPressurePlayer = cand;
+          secondTeamPressureTargetID = bestPassOption->GetID();
+        }
+      }
+    }
   }
 }
 
@@ -1028,6 +1207,8 @@ void TeamAIController::Reset() {
   attackingRunPlayer = 0;
   endApplyTeamPressure_ms = 0;
   teamPressurePlayer = 0;
+  secondTeamPressurePlayer = 0;
+  secondTeamPressureTargetID = -1;
   endApplyKeeperRush_ms = 0;
 
   teamHasPossession = false;

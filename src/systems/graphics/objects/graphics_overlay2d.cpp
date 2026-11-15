@@ -31,19 +31,19 @@ namespace blunted {
   GraphicsOverlay2D::~GraphicsOverlay2D() {
   }
 
-  boost::intrusive_ptr<Interpreter> GraphicsOverlay2D::GetInterpreter(e_ObjectType objectType) {
+  blunted::intrusive_ptr<Interpreter> GraphicsOverlay2D::GetInterpreter(e_ObjectType objectType) {
     if (objectType == e_ObjectType_Image2D) {
-      boost::intrusive_ptr<GraphicsOverlay2D_Image2DInterpreter> image2DInterpreter(new GraphicsOverlay2D_Image2DInterpreter(this));
+      blunted::intrusive_ptr<GraphicsOverlay2D_Image2DInterpreter> image2DInterpreter(new GraphicsOverlay2D_Image2DInterpreter(this));
       return image2DInterpreter;
     }
     Log(e_FatalError, "GraphicsOverlay2D", "GetInterpreter", "No appropriate interpreter found for this ObjectType");
-    return boost::intrusive_ptr<GraphicsOverlay2D_Image2DInterpreter>();
+    return blunted::intrusive_ptr<GraphicsOverlay2D_Image2DInterpreter>();
   }
 
   GraphicsOverlay2D_Image2DInterpreter::GraphicsOverlay2D_Image2DInterpreter(GraphicsOverlay2D *caller) : caller(caller) {
   }
 
-  void GraphicsOverlay2D_Image2DInterpreter::OnLoad(boost::intrusive_ptr < Resource<Surface> > surface) {
+  void GraphicsOverlay2D_Image2DInterpreter::OnLoad(blunted::intrusive_ptr < Resource<Surface> > surface) {
 
     bool alreadyThere = false;
 
@@ -61,7 +61,7 @@ namespace blunted {
     caller->texture->GetResource()->CreateTexture(
         e_InternalPixelFormat_RGBA8,
         alpha ? e_PixelFormat_RGBA : e_PixelFormat_RGB, image->w, image->h,
-        alpha, false, false, false);
+        alpha, false, false, true);
     caller->texture->GetResource()->UpdateTexture(image, alpha, false);
       caller->position[0] = 0;
       caller->position[1] = 0;
@@ -82,7 +82,7 @@ namespace blunted {
     //printf("[OK]\n");
   }
 
-  void GraphicsOverlay2D_Image2DInterpreter::OnChange(boost::intrusive_ptr < Resource<Surface> > surface) {
+  void GraphicsOverlay2D_Image2DInterpreter::OnChange(blunted::intrusive_ptr < Resource<Surface> > surface) {
     SDL_Surface *image = surface->GetResource()->GetData();
     assert(image);
     assert(caller->texture);

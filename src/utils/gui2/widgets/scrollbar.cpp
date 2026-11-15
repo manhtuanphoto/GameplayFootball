@@ -23,7 +23,7 @@ namespace blunted {
   Gui2Scrollbar::~Gui2Scrollbar() {
   }
 
-  void Gui2Scrollbar::GetImages(std::vector < boost::intrusive_ptr<Image2D> > &target) {
+  void Gui2Scrollbar::GetImages(std::vector < blunted::intrusive_ptr<Image2D> > &target) {
     target.push_back(image);
     Gui2View::GetImages(target);
   }

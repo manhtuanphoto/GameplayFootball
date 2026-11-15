@@ -20,6 +20,7 @@
 
 #include "utils/gui2/widgets/caption.hpp"
 #include "../menu/ingame/scoreboard.hpp"
+#include "../menu/ingame/playerhud.hpp"
 #include "../menu/ingame/radar.hpp"
 #include "../menu/ingame/tacticsdebug.hpp"
 
@@ -27,11 +28,10 @@
 #include "scene/objects/sound.hpp"
 #include "scene/objects/light.hpp"
 
+#include "base/circular_buffer.hpp"
 #include "types/messagequeue.hpp"
 #include "types/command.hpp"
 #include "types/lockable.hpp"
-
-#include <boost/circular_buffer.hpp>
 
 #include <fstream>
 #include <iostream>
@@ -49,10 +49,10 @@ struct ReplayBallTouchesNetFrame {
 
 struct ReplaySpatial {
   ReplaySpatial(int frameCount) {
-    frames = boost::circular_buffer<ReplaySpatialFrame>(frameCount);
+    frames = blunted::CircularBuffer<ReplaySpatialFrame>(frameCount);
   }
-  boost::intrusive_ptr<Spatial> spatial;
-  boost::circular_buffer<ReplaySpatialFrame> frames;
+  blunted::intrusive_ptr<Spatial> spatial;
+  blunted::CircularBuffer<ReplaySpatialFrame> frames;
 };
 
 struct PlayerBounce {
@@ -109,7 +109,7 @@ class Match {
     void Exit();
 
     void SetRandomSunParams();
-    void RandomizeAdboards(boost::intrusive_ptr<Node> stadiumNode);
+    void RandomizeAdboards(blunted::intrusive_ptr<Node> stadiumNode);
     void UpdateControllerSetup();
     void SpamMessage(const std::string &msg, int time_ms = 3000);
     int GetScore(int teamID) { return matchData->GetGoalCount(teamID); }
@@ -120,7 +120,7 @@ class Match {
     void GetActiveTeamPlayers(int teamID, std::vector<Player*> &players);
     void GetOfficialPlayers(std::vector<PlayerBase*> &players);
 
-    boost::shared_ptr<AnimCollection> GetAnimCollection() { return anims; }
+    std::shared_ptr<AnimCollection> GetAnimCollection() { return anims; }
 
     const MentalImage *GetMentalImage(int history_ms);
     void UpdateLatestMentalImageBallPredictions();
@@ -174,8 +174,8 @@ class Match {
 
     void UpdateIngameCamera();
 
-    boost::intrusive_ptr<Camera> GetCamera() { return camera; }
-    boost::shared_ptr<AnimCollection> GetAnims() { return anims; }
+    blunted::intrusive_ptr<Camera> GetCamera() { return camera; }
+    std::shared_ptr<AnimCollection> GetAnims() { return anims; }
 
     void Get();
     void Process();
@@ -183,7 +183,7 @@ class Match {
     void FetchPutBuffers();
     void Put();
 
-    boost::intrusive_ptr<Node> GetDynamicNode();
+    blunted::intrusive_ptr<Node> GetDynamicNode();
 
     void ApplyReplayFrame(unsigned long replayTime_ms);
 
@@ -203,6 +203,13 @@ class Match {
     float GetMatchDurationFactor() const { return matchDurationFactor; }
     float GetMatchDifficulty() const { return matchDifficulty; }
 
+    e_SpecialMatchMode GetSpecialMatchMode() const { return specialMatchMode; }
+    bool IsSandboxEndless() const { return specialMatchMode == e_SpecialMatchMode_SandboxEndless; }
+    bool IsFreeKickMode() const { return specialMatchMode == e_SpecialMatchMode_FreeKick; }
+    int GetFreeKickPreset() const { return freeKickPreset; }
+    int GetFreeKickAttemptCount() const { return freeKickAttemptCount; }
+    void IncrementFreeKickAttemptCount() { freeKickAttemptCount++; }
+
     std::vector<Vector3> &GetAnimPositionCache(Animation *anim) { return animPositionCache.find(anim)->second; }
 
     void UploadGoalNetting();
@@ -217,15 +224,15 @@ class Match {
     //void AddMissingAnim(const MissingAnim &someAnim);
 
     // not sure about how signals work in this game at the moment. whole menu/game thing needs a rethink, i guess
-    boost::signals2::signal<void(Match*)> sig_OnMatchPhaseChange;
-    boost::signals2::signal<void(Match*)> sig_OnShortReplayMoment;
-    boost::signals2::signal<void(Match*)> sig_OnExtendedReplayMoment;
-    boost::signals2::signal<void(Match*)> sig_OnGameOver;
-    boost::signals2::signal<void(Match*)> sig_OnCreatedMatch;
-    boost::signals2::signal<void(Match*)> sig_OnExitedMatch;
+    blunted::Signal<void(Match*)> sig_OnMatchPhaseChange;
+    blunted::Signal<void(Match*)> sig_OnShortReplayMoment;
+    blunted::Signal<void(Match*)> sig_OnExtendedReplayMoment;
+    blunted::Signal<void(Match*)> sig_OnGameOver;
+    blunted::Signal<void(Match*)> sig_OnCreatedMatch;
+    blunted::Signal<void(Match*)> sig_OnExitedMatch;
 
   protected:
-    void GetReplaySpatials(std::list < boost::intrusive_ptr<Spatial> > &spatials);
+    void GetReplaySpatials(std::list < blunted::intrusive_ptr<Spatial> > &spatials);
     void CaptureReplayFrame(unsigned long replayTime_ms);
     bool CheckForGoal(signed int side);
 
@@ -250,14 +257,14 @@ class Match {
 
     Officials *officials;
 
-    boost::intrusive_ptr<Node> dynamicNode;
+    blunted::intrusive_ptr<Node> dynamicNode;
 
-    boost::intrusive_ptr<Node> cameraNode;
-    boost::intrusive_ptr<Camera> camera;
-    boost::intrusive_ptr<Node> sunNode;
+    blunted::intrusive_ptr<Node> cameraNode;
+    blunted::intrusive_ptr<Camera> camera;
+    blunted::intrusive_ptr<Node> sunNode;
 
-    boost::intrusive_ptr<Node> stadiumNode;
-    boost::intrusive_ptr<Node> goalsNode;
+    blunted::intrusive_ptr<Node> stadiumNode;
+    blunted::intrusive_ptr<Node> goalsNode;
 
     // camera user settings
     float cameraUserZoom;
@@ -265,15 +272,19 @@ class Match {
     float cameraUserFOV;
     float cameraUserAngleFactor;
 
-    boost::shared_ptr<AnimCollection> anims;
+    std::shared_ptr<AnimCollection> anims;
 
     const std::vector<IHIDevice*> &controllers;
 
     Ball *ball;
 
     std::vector<MentalImage*> mentalImages; // [index] == index * 10 ms ago ([0] == now)
+    std::vector<Player*> collisionPlayersScratch;
+    std::vector<std::vector<PlayerBounce>> collisionBouncesScratch;
+    int cachedScoreboardTimeKey = -999999;
 
     Gui2ScoreBoard *scoreboard;
+    Gui2PlayerHUD *playerHUD;
     Gui2Radar *radar;
     Gui2TacticsDebug *tacticsDebug;
     Gui2Caption *messageCaption;
@@ -305,7 +316,7 @@ class Match {
 
     bool gameOver;
 
-    boost::intrusive_ptr<Node> fullbodyNode;
+    blunted::intrusive_ptr<Node> fullbodyNode;
     std::map<Vector3, Vector3> colorCoords;
 
     ValueHistory<float> *possessionSideHistory;
@@ -338,18 +349,22 @@ class Match {
     unsigned int lastBodyBallCollisionTime_ms;
 
     std::deque<Vector3> camPos; // todo: circular buffer?
+    Vector3 camFocusPos;
+    Vector3 camFocusVel;
+    Vector3 camPlayerAnchor;
+    bool camFocusInitialized;
 
     Referee *referee;
 
-    boost::shared_ptr<MenuTask> menuTask;
+    std::shared_ptr<MenuTask> menuTask;
 
-    boost::shared_ptr<Scene3D> scene3D;
+    std::shared_ptr<Scene3D> scene3D;
 
-    boost::intrusive_ptr<Sound> crowd01;
-    boost::intrusive_ptr<Sound> crowd02;
+    blunted::intrusive_ptr<Sound> crowd01;
+    blunted::intrusive_ptr<Sound> crowd02;
 
     std::vector<ReplaySpatial*> replay;
-    boost::circular_buffer<ReplayBallTouchesNetFrame> replayBallTouchesNetFrames;
+    blunted::CircularBuffer<ReplayBallTouchesNetFrame> replayBallTouchesNetFrames;
     bool resetNetting;
     bool nettingHasChanged;
 
@@ -364,7 +379,7 @@ class Match {
     std::vector<Vector3> nettingMeshesSrc[2];
     std::vector<float*> nettingMeshes[2];
 
-    //boost::intrusive_ptr<Light> lightTest[100];
+    //blunted::intrusive_ptr<Light> lightTest[100];
 
     // todo: this is temporary
     bool _positionLogging;
@@ -373,6 +388,9 @@ class Match {
     //std::vector<MissingAnim> missingAnims;
 
     float matchDifficulty;
+    e_SpecialMatchMode specialMatchMode;
+    int freeKickPreset;
+    int freeKickAttemptCount;
 };
 
 #endif

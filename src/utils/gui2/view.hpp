@@ -15,7 +15,7 @@ namespace blunted {
 
   class Gui2WindowManager;
 
-  class Gui2View : public boost::signals2::trackable {
+  class Gui2View : public blunted::Trackable {
 
     public:
       Gui2View(Gui2WindowManager *windowManager, const std::string &name, float x_percent, float y_percent, float width_percent, float height_percent);
@@ -39,7 +39,7 @@ namespace blunted {
       virtual void GetDerivedPosition(float &x_percent, float &y_percent) const;
       virtual void SnuglyFitSize(float margin = 0.5f);
       virtual void CenterPosition();
-      virtual void GetImages(std::vector < boost::intrusive_ptr<Image2D> > &target);
+      virtual void GetImages(std::vector < blunted::intrusive_ptr<Image2D> > &target);
 
       std::vector<Gui2View*> GetChildren() { return children; }
 
@@ -73,7 +73,7 @@ namespace blunted {
       virtual int GetZPriority() const { return zPriority; }
       void PrintTree(int depth);
 
-      boost::signals2::signal<void()> sig_OnClose;
+      blunted::Signal<void()> sig_OnClose;
 
     protected:
       Gui2WindowManager *windowManager;
@@ -93,6 +93,7 @@ namespace blunted {
       bool isOverlay;
 
       int zPriority;
+      bool zPriorityApplied = false;
 
   };
 

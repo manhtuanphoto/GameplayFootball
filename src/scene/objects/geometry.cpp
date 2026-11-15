@@ -16,7 +16,7 @@ namespace blunted {
   }
 
   Geometry::Geometry(const Geometry &src, const std::string &postfix) : Object(src) {
-    if (src.geometryData != boost::intrusive_ptr < Resource<GeometryData> >()) {
+    if (src.geometryData != blunted::intrusive_ptr < Resource<GeometryData> >()) {
       src.geometryData->resourceMutex.lock();
       std::string srcName = src.geometryData->GetIdentString();
       src.geometryData->resourceMutex.unlock();
@@ -50,7 +50,7 @@ namespace blunted {
     InvalidateBoundingVolume();
   }
 
-  void Geometry::SetGeometryData(boost::intrusive_ptr < Resource<GeometryData> > geometryData) {
+  void Geometry::SetGeometryData(blunted::intrusive_ptr < Resource<GeometryData> > geometryData) {
     subjectMutex.lock();
 
     // todo: check if already pointing to existing data and maybe delete?
@@ -81,7 +81,7 @@ namespace blunted {
     InvalidateBoundingVolume();
   }
 
-  boost::intrusive_ptr < Resource<GeometryData> > Geometry::GetGeometryData() {
+  blunted::intrusive_ptr < Resource<GeometryData> > Geometry::GetGeometryData() {
     return geometryData;
   }
 
@@ -147,10 +147,19 @@ namespace blunted {
     aabb.Lock();
 
     if (aabb.data.dirty == true) {
-      geometryData->resourceMutex.lock();
-      assert(geometryData->GetResource());
-      aabb.data.aabb = geometryData->GetResource()->GetAABB() * GetDerivedRotation() + GetDerivedPosition();
-      geometryData->resourceMutex.unlock();
+      if (!boneMatrices.empty()) {
+        // Generous world-space bounds for GPU-skinned humanoids (sprinting, diving, sliding)
+        AABB skinnedBounds;
+        skinnedBounds.minxyz = Vector3(-1.8f, -1.8f, -0.3f);
+        skinnedBounds.maxxyz = Vector3(1.8f, 1.8f, 2.6f);
+        skinnedBounds.MakeDirty();
+        aabb.data.aabb = skinnedBounds + GetDerivedPosition();
+      } else {
+        geometryData->resourceMutex.lock();
+        assert(geometryData->GetResource());
+        aabb.data.aabb = geometryData->GetResource()->GetAABB() * GetDerivedRotation() + GetDerivedPosition();
+        geometryData->resourceMutex.unlock();
+      }
       aabb.data.dirty = false;
     }
 
@@ -159,6 +168,18 @@ namespace blunted {
     aabb.Unlock();
 
     return tmp;
+  }
+
+  void Geometry::SetBoneMatrices(const std::vector<Matrix4> &matrices) {
+    subjectMutex.lock();
+    boneMatrices = matrices;
+    int observersSize = observers.size();
+    for (int i = 0; i < observersSize; i++) {
+      IGeometryInterpreter *geometryInterpreter = static_cast<IGeometryInterpreter*>(observers.at(i).get());
+      geometryInterpreter->OnSetBoneMatrices(boneMatrices);
+    }
+    subjectMutex.unlock();
+    InvalidateBoundingVolume();
   }
 
   void Geometry::ApplyForceAtRelativePosition(float force, const Vector3 &direction, const Vector3 &position) {

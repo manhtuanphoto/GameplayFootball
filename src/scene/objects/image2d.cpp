@@ -12,7 +12,10 @@
 namespace blunted {
 
   Image2D::Image2D(std::string name) : Object(name, e_ObjectType_Image2D) {
-    //printf("CREATING IMAGE\n");
+    position[0] = -999999;
+    position[1] = -999999;
+    size[0] = 0;
+    size[1] = 0;
   }
 
   Image2D::~Image2D() {
@@ -38,15 +41,15 @@ namespace blunted {
   }
 
   // todo: rename to SetSurface and GetSurface?
-  void Image2D::SetImage(boost::intrusive_ptr < Resource<Surface> > image) {
+  void Image2D::SetImage(blunted::intrusive_ptr < Resource<Surface> > image) {
     subjectMutex.lock();
 
     this->image = image;
 
     image->resourceMutex.lock();
 
-    position[0] = 0;
-    position[1] = 0;
+    position[0] = -999999;
+    position[1] = -999999;
     size[0] = image->GetResource()->GetData()->w;
     size[1] = image->GetResource()->GetData()->h;
 
@@ -61,14 +64,18 @@ namespace blunted {
     subjectMutex.unlock();
   }
 
-  boost::intrusive_ptr < Resource<Surface> > Image2D::GetImage() {
+  blunted::intrusive_ptr < Resource<Surface> > Image2D::GetImage() {
     // todo: this mutex lock makes little sense or so it seems. will have to force users to lock from outside this function
-    boost::mutex::scoped_lock blah(subjectMutex);
+    std::unique_lock<std::mutex> blah(subjectMutex);
     return image;
   }
 
   void Image2D::SetPosition(int x, int y) {
     subjectMutex.lock();
+    if (position[0] == x && position[1] == y) {
+      subjectMutex.unlock();
+      return;
+    }
 
     position[0] = x;
     position[1] = y;
@@ -218,7 +225,11 @@ namespace blunted {
     SDL_Surface *surface = image->GetResource()->GetData();
     SDL_LockSurface(surface);
 
-    sdl_triangle_filled(surface, triangle, int(floor(color.coords[0])), int(floor(color.coords[1])), int(floor(color.coords[2])));
+    sdl_triangle_filled_rgba(surface, triangle,
+                             (Uint8)clamp((int)floor(color.coords[0]), 0, 255),
+                             (Uint8)clamp((int)floor(color.coords[1]), 0, 255),
+                             (Uint8)clamp((int)floor(color.coords[2]), 0, 255),
+                             (Uint8)clamp(alpha, 0, 255));
 
     SDL_UnlockSurface(surface);
 

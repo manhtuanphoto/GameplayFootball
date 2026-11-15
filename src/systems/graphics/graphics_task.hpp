@@ -39,7 +39,7 @@ namespace blunted {
 
       int shadowSkipFrameCounter;
 
-      boost::intrusive_ptr<Renderer3DMessage_SwapBuffers> swapBuffers;
+      blunted::intrusive_ptr<Renderer3DMessage_SwapBuffers> swapBuffers;
 
       mutable Lockable<unsigned long> lastSwapTime_ms;
       mutable Lockable < std::list<int> > frameTimes_ms;
@@ -69,13 +69,13 @@ namespace blunted {
   class GraphicsTaskCommand_EnqueueView : public Command {
 
     public:
-      GraphicsTaskCommand_EnqueueView(boost::intrusive_ptr<Camera> camera, int shadowSkipFrameCounter) : Command("EnqueueView"), camera(camera), shadowSkipFrameCounter(shadowSkipFrameCounter) {};
+      GraphicsTaskCommand_EnqueueView(blunted::intrusive_ptr<Camera> camera, int shadowSkipFrameCounter) : Command("EnqueueView"), camera(camera), shadowSkipFrameCounter(shadowSkipFrameCounter) {};
 
     protected:
       virtual bool Execute(void *caller = NULL);
-      virtual void EnqueueShadowMap(boost::intrusive_ptr<Light> light);
+      virtual void EnqueueShadowMap(blunted::intrusive_ptr<Light> light);
 
-      boost::intrusive_ptr<Camera> camera;
+      blunted::intrusive_ptr<Camera> camera;
       int shadowSkipFrameCounter;
 
   };

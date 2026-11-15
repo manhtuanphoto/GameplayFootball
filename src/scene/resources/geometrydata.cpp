@@ -24,6 +24,7 @@ namespace blunted {
   }
 
   GeometryData::GeometryData(const GeometryData &src) {
+    isDynamic = src.isDynamic;
     for (unsigned int i = 0; i < src.triangleMeshes.size(); i++) {
       // shallow copy
       MaterializedTriangleMesh mesh = src.triangleMeshes.at(i);

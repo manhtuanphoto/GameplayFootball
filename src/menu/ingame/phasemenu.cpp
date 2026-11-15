@@ -13,7 +13,14 @@ using namespace blunted;
 
 MatchPhasePage::MatchPhasePage(Gui2WindowManager *windowManager, const Gui2PageData &pageData) : Gui2Page(windowManager, pageData) {
 
-  GetGameTask()->GetMatch()->Pause(true);
+  Match *match = GetGameTask()->GetMatch();
+  match->Pause(true);
+
+  if (match->GetTeam(0)->GetHumanGamerCount() == 0 && match->GetTeam(1)->GetHumanGamerCount() == 0) {
+    autoContinue_ms = 2500;
+  } else {
+    autoContinue_ms = -1;
+  }
 
   nextPhase = (e_MatchPhase)pageData.properties->GetInt("nextphase");
 
@@ -26,8 +33,8 @@ MatchPhasePage::MatchPhasePage(Gui2WindowManager *windowManager, const Gui2PageD
   buttonNext = new Gui2Button(windowManager, "button_next", 0, 0, 30, 3, "begin " + phaseName);
   Gui2Button *button1 = new Gui2Button(windowManager, "button1", 0, 0, 30, 3, "game plan");
 
-  buttonNext->sig_OnClick.connect(boost::bind(&MatchPhasePage::ContinueGame, this));
-  button1->sig_OnClick.connect(boost::bind(&MatchPhasePage::GoGamePlan, this));
+  buttonNext->sig_OnClick.connect(blunted::Bind(&MatchPhasePage::ContinueGame, this));
+  button1->sig_OnClick.connect(blunted::Bind(&MatchPhasePage::GoGamePlan, this));
 
   grid = new Gui2Grid(windowManager, "grid", 10, 10, 80, 80);
 
@@ -58,6 +65,22 @@ void MatchPhasePage::ContinueGame() {
   GetMenuTask()->ReleaseAllButtons();
   GetGameTask()->GetMatch()->Pause(false);
   GoBack(); // back to gamepage
+}
+
+void MatchPhasePage::Process() {
+  Gui2Page::Process();
+
+  if (autoContinue_ms > 0) {
+    if (!buttonNext->IsFocussed()) {
+      autoContinue_ms = -1; // user navigated away (e.g. towards game plan), cancel auto-advance
+    } else {
+      autoContinue_ms -= windowManager->GetTimeStep_ms();
+      if (autoContinue_ms <= 0) {
+        ContinueGame();
+        return;
+      }
+    }
+  }
 }
 
 void MatchPhasePage::ProcessWindowingEvent(WindowingEvent *event) {

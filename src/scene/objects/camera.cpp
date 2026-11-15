@@ -74,7 +74,7 @@ namespace blunted {
     subjectMutex.unlock();
   }
 
-  void Camera::EnqueueView(std::deque < boost::intrusive_ptr<Geometry> > &visibleGeometry, std::deque < boost::intrusive_ptr<Light> > &visibleLights, std::deque < boost::intrusive_ptr<Skybox> > &skyboxes) {
+  void Camera::EnqueueView(std::deque < blunted::intrusive_ptr<Geometry> > &visibleGeometry, std::deque < blunted::intrusive_ptr<Light> > &visibleLights, std::deque < blunted::intrusive_ptr<Skybox> > &skyboxes) {
     subjectMutex.lock();
 
     int observersSize = observers.size();

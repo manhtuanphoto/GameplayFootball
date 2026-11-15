@@ -44,7 +44,7 @@ namespace blunted {
 
       virtual void UpdateValues();
 
-      virtual void EnqueueShadowMap(boost::intrusive_ptr<Camera> camera, std::deque < boost::intrusive_ptr<Geometry> > visibleGeometry);
+      virtual void EnqueueShadowMap(blunted::intrusive_ptr<Camera> camera, std::deque < blunted::intrusive_ptr<Geometry> > visibleGeometry);
       virtual void Poke(e_SystemType targetSystemType);
 
       virtual void RecursiveUpdateSpatialData(e_SpatialDataType spatialDataType, e_SystemType excludeSystem = e_SystemType_None);
@@ -68,7 +68,7 @@ namespace blunted {
       virtual void SetShadow(bool shadow) = 0;
       virtual bool GetShadow() = 0;
       virtual void OnSpatialChange(const Vector3 &position, const Quaternion &rotation) = 0;
-      virtual void EnqueueShadowMap(boost::intrusive_ptr<Camera> camera, std::deque < boost::intrusive_ptr<Geometry> > visibleGeometry) = 0;
+      virtual void EnqueueShadowMap(blunted::intrusive_ptr<Camera> camera, std::deque < blunted::intrusive_ptr<Geometry> > visibleGeometry) = 0;
       virtual void OnPoke() = 0;
 
     protected:

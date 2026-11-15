@@ -10,10 +10,10 @@
 namespace blunted {
 
   struct Material {
-    boost::intrusive_ptr < Resource<Surface> > diffuseTexture;
-    boost::intrusive_ptr < Resource<Surface> > normalTexture;
-    boost::intrusive_ptr < Resource<Surface> > specularTexture;
-    boost::intrusive_ptr < Resource<Surface> > illuminationTexture;
+    blunted::intrusive_ptr < Resource<Surface> > diffuseTexture;
+    blunted::intrusive_ptr < Resource<Surface> > normalTexture;
+    blunted::intrusive_ptr < Resource<Surface> > specularTexture;
+    blunted::intrusive_ptr < Resource<Surface> > illuminationTexture;
     float shininess;
     float specular_amount;
     Vector3 self_illumination;

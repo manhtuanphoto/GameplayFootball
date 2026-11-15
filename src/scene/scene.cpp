@@ -16,7 +16,7 @@ namespace blunted {
     DetachAll();
   }
 
-  void Scene::CreateSystemObjects(boost::intrusive_ptr<Object> object) {
+  void Scene::CreateSystemObjects(blunted::intrusive_ptr<Object> object) {
     subjectMutex.lock();
 
     int observersSize = observers.size();

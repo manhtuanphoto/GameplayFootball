@@ -30,11 +30,11 @@ VisualOptionsPage::VisualOptionsPage(Gui2WindowManager *windowManager, const Gui
   kitSelectionPulldown[1]->AddEntry("Kit 01", "team2kit01");
   kitSelectionPulldown[1]->AddEntry("Kit 02", "team2kit02");
   kitSelectionPulldown[1]->SetSelected(1);
-  kitSelectionPulldown[0]->sig_OnChange.connect(boost::bind(&VisualOptionsPage::OnChangeKit, this, kitSelectionPulldown[0]));
-  kitSelectionPulldown[1]->sig_OnChange.connect(boost::bind(&VisualOptionsPage::OnChangeKit, this, kitSelectionPulldown[1]));
+  kitSelectionPulldown[0]->sig_OnChange.connect(blunted::Bind(&VisualOptionsPage::OnChangeKit, this, kitSelectionPulldown[0]));
+  kitSelectionPulldown[1]->sig_OnChange.connect(blunted::Bind(&VisualOptionsPage::OnChangeKit, this, kitSelectionPulldown[1]));
 
   Gui2Button *randomizeSunButton = new Gui2Button(windowManager, "button_visualoptions_randomizesun", 0, 0, 20, 3, "Randomize sun position");
-  randomizeSunButton->sig_OnClick.connect(boost::bind(&VisualOptionsPage::OnRandomizeSun, this));
+  randomizeSunButton->sig_OnClick.connect(blunted::Bind(&VisualOptionsPage::OnRandomizeSun, this));
 
   grid->AddView(kitSelectionCaption1, 0, 0);
   grid->AddView(kitSelectionPulldown[0], 0, 1);

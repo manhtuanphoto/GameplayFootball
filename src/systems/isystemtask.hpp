@@ -43,6 +43,7 @@ namespace blunted {
       }
 
     protected:
+      virtual void OnHandled() override;
       ISystemTask *task;
 
   };

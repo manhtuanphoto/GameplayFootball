@@ -37,21 +37,20 @@ namespace blunted {
   }
 
   bool Properties::Exists(const char *name) const {
-    auto iter = properties.find(std::string(name));
-    if (iter == properties.end()) {
-      return false;
-    } else {
-      return true;
-    }
+    return properties.find(std::string_view(name)) != properties.end();
   }
 
   void Properties::Set(const char *name, const std::string &value) {
-    properties[std::string(name)] = value;
-    }
+    std::string key(name);
+    properties[key] = value;
+    numericProperties[std::move(key)] = static_cast<real>(atof(value.c_str()));
+  }
 
   void Properties::SetInt(const char *name, int value) {
     std::string value_str = int_to_str(value);
-    Set(name, value_str);
+    std::string key(name);
+    properties[key] = std::move(value_str);
+    numericProperties[std::move(key)] = static_cast<real>(value);
   }
 
   void Properties::Set(const char *name, real value) {
@@ -61,11 +60,13 @@ namespace blunted {
 
   void Properties::SetBool(const char *name, bool value) {
     std::string value_str = value ? "true" : "false";
-    Set(name, value_str);
+    std::string key(name);
+    properties[key] = std::move(value_str);
+    numericProperties[std::move(key)] = 0.0f;
   }
 
   const std::string &Properties::Get(const char *name, const std::string &defaultValue) const {
-    auto iter = properties.find(std::string(name));
+    auto iter = properties.find(std::string_view(name));
     if (iter == properties.end()) {
       return defaultValue;
     } else {
@@ -74,36 +75,36 @@ namespace blunted {
   }
 
   bool Properties::GetBool(const char *name, bool defaultValue) const {
-    auto iter = properties.find(std::string(name));
+    auto iter = properties.find(std::string_view(name));
     if (iter == properties.end()) {
       return defaultValue;
     } else {
-      if (iter->second.compare("true") == 0) return true; else return false;
+      return iter->second == "true";
     }
   }
 
   real Properties::GetReal(const char *name, real defaultValue) const {
-    auto iter = properties.find(std::string(name));
-    if (iter == properties.end()) {
+    auto iter = numericProperties.find(std::string_view(name));
+    if (iter == numericProperties.end()) {
       return defaultValue;
     } else {
-      return atof(iter->second.c_str());
+      return iter->second;
     }
   }
 
   int Properties::GetInt(const char *name, int defaultValue) const {
-    auto iter = properties.find(std::string(name));
-    if (iter == properties.end()) {
+    auto iter = numericProperties.find(std::string_view(name));
+    if (iter == numericProperties.end()) {
       return defaultValue;
     } else {
-      return int(floor(atof(iter->second.c_str())));
+      return int(floor(iter->second));
     }
   }
 
   Vector3 Properties::GetVector3(const char *name, Vector3 defaultValue) const {
-    if (Exists(name)) {
-      const std::string &str = Get(name);
-      return GetVectorFromString(str);
+    auto iter = properties.find(std::string_view(name));
+    if (iter != properties.end()) {
+      return GetVectorFromString(iter->second);
     } else {
       return defaultValue;
     }
@@ -111,23 +112,19 @@ namespace blunted {
 
   void Properties::AddProperties(const Properties *userprops) {
     if (!userprops) return;
-
-    const map_Properties *userpropdata = userprops->GetProperties();
-    map_Properties::const_iterator iter = userpropdata->begin();
-
-    while (iter != userpropdata->end()) {
-      properties[iter->first] = iter->second;
-      iter++;
-    }
+    AddProperties(*userprops);
   }
 
   void Properties::AddProperties(const Properties &userprops) {
     const map_Properties *userpropdata = userprops.GetProperties();
-    map_Properties::const_iterator iter = userpropdata->begin();
-
-    while (iter != userpropdata->end()) {
+    for (auto iter = userpropdata->begin(); iter != userpropdata->end(); ++iter) {
       properties[iter->first] = iter->second;
-      iter++;
+      auto numIt = userprops.numericProperties.find(iter->first);
+      if (numIt != userprops.numericProperties.end()) {
+        numericProperties[iter->first] = numIt->second;
+      } else {
+        numericProperties[iter->first] = static_cast<real>(atof(iter->second.c_str()));
+      }
     }
   }
 

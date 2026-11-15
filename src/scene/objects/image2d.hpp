@@ -24,8 +24,8 @@ namespace blunted {
 
       virtual void Exit();
 
-      void SetImage(boost::intrusive_ptr < Resource<Surface> > image);
-      boost::intrusive_ptr < Resource<Surface> > GetImage();
+      void SetImage(blunted::intrusive_ptr < Resource<Surface> > image);
+      blunted::intrusive_ptr < Resource<Surface> > GetImage();
 
       void SetPosition(int x, int y);
       virtual void SetPosition(const Vector3 &newPosition, bool updateSpatialData = true);
@@ -48,16 +48,16 @@ namespace blunted {
     protected:
       int position[2];
       int size[2];
-      boost::intrusive_ptr < Resource<Surface> > image;
+      blunted::intrusive_ptr < Resource<Surface> > image;
 
   };
 
   class IImage2DInterpreter : public Interpreter {
 
     public:
-      virtual void OnLoad(boost::intrusive_ptr < Resource<Surface> > surface) = 0;
+      virtual void OnLoad(blunted::intrusive_ptr < Resource<Surface> > surface) = 0;
       virtual void OnUnload() = 0;
-      virtual void OnChange(boost::intrusive_ptr < Resource<Surface> > surface) = 0;
+      virtual void OnChange(blunted::intrusive_ptr < Resource<Surface> > surface) = 0;
       virtual void OnMove(int x, int y) = 0;
       virtual void OnPoke() = 0;
 

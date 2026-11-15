@@ -28,7 +28,7 @@ namespace blunted {
       std::string GetText() { return text; }
 
     protected:
-      boost::intrusive_ptr<Image2D> image;
+      blunted::intrusive_ptr<Image2D> image;
       float fontsize_percent;
       unsigned int maxHorizChars;
       std::string text;

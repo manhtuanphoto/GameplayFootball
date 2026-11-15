@@ -27,13 +27,13 @@ namespace blunted {
       virtual ~ASELoader();
 
       // ----- encapsulating load function
-      virtual void Load(std::string filename, boost::intrusive_ptr < Resource <GeometryData> > resource);
+      virtual void Load(std::string filename, blunted::intrusive_ptr < Resource <GeometryData> > resource);
 
       // ----- interpreter for the .ase treedata
-      void Build(const s_tree *data, boost::intrusive_ptr < Resource <GeometryData> > resource);
+      void Build(const s_tree *data, blunted::intrusive_ptr < Resource <GeometryData> > resource);
 
       // ----- per-object interpreters
-      void BuildTriangleMesh(const s_tree *data, boost::intrusive_ptr < Resource <GeometryData> > resource, std::vector <s_Material> materialList);
+      void BuildTriangleMesh(const s_tree *data, blunted::intrusive_ptr < Resource <GeometryData> > resource, std::vector <s_Material> materialList);
 
     protected:
 

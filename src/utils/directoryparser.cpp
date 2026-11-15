@@ -6,7 +6,7 @@
 
 #include "base/log.hpp"
 
-namespace fs = boost::filesystem;
+namespace fs = std::filesystem;
 
 namespace blunted {
 
@@ -16,35 +16,25 @@ namespace blunted {
   DirectoryParser::~DirectoryParser() {
   }
 
-  void DirectoryParser::Parse(boost::filesystem::path path, const std::string &extension, std::vector<std::string> &files, bool recurse) {
+  void DirectoryParser::Parse(std::filesystem::path path, const std::string &extension, std::vector<std::string> &files, bool recurse) {
+    std::error_code ec;
+    if (!fs::exists(path, ec) || !fs::is_directory(path, ec)) {
+      Log(e_Error, "DirectoryParser", "Parse", "Could not open directory " + path.string() + " for reading");
+      return;
+    }
 
-    if (!fs::exists(path) || !fs::is_directory(path)) Log(e_Error, "DirectoryParser", "Parse", "Could not open directory " + path.string() + " for reading");
-
-    fs::directory_iterator dirIter(path);
-    fs::directory_iterator endIter;
-    while (dirIter != endIter) {
-      if (is_directory(dirIter->status())) {
-
+    for (const auto &entry : fs::directory_iterator(path, ec)) {
+      if (entry.is_directory(ec)) {
         if (recurse) {
-          boost::filesystem::path thePath(path);
-          thePath /= dirIter->path().filename();
-          Parse(thePath, extension, files);
+          fs::path thePath = path / entry.path().filename();
+          Parse(thePath, extension, files, recurse);
         }
-
       } else {
-        boost::filesystem::path thePath(path);
-        thePath /= dirIter->path().filename();
-
+        fs::path thePath = path / entry.path().filename();
         if (thePath.extension() == "." + extension) {
-
-          // add to results
-          //printf("adding %s\n", dirIter->path().filename().c_str());
-          files.push_back(path.string() + "/" + thePath.filename().string());
-
+          files.push_back(path.generic_string() + "/" + thePath.filename().string());
         }
       }
-
-      dirIter++;
     }
   }
 

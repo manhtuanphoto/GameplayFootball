@@ -13,7 +13,7 @@
 
 namespace blunted {
 
-  typedef Lockable < std::vector < boost::intrusive_ptr<Object> > > vector_Objects;
+  typedef Lockable < std::vector < blunted::intrusive_ptr<Object> > > vector_Objects;
 
   class Scene : public IScene {
 
@@ -24,7 +24,7 @@ namespace blunted {
       virtual void Init() = 0; // ATOMIC
       virtual void Exit(); // ATOMIC
 
-      virtual void CreateSystemObjects(boost::intrusive_ptr<Object> object);
+      virtual void CreateSystemObjects(blunted::intrusive_ptr<Object> object);
 
       virtual const std::string GetName() const;
       virtual e_SceneType GetSceneType() const;

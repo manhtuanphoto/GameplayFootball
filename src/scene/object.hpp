@@ -7,6 +7,8 @@
 
 #include "defines.hpp"
 
+#include <atomic>
+
 #include "types/subject.hpp"
 #include "types/spatial.hpp"
 #include "base/properties.hpp"
@@ -69,12 +71,12 @@ namespace blunted {
 
       Lockable<MustUpdateSpatialData> updateSpatialDataAfterPoke;
 
-      virtual boost::intrusive_ptr<Interpreter> GetInterpreter(e_SystemType targetSystemType);
+      virtual blunted::intrusive_ptr<Interpreter> GetInterpreter(e_SystemType targetSystemType);
       virtual void LockSubject();
       virtual void UnlockSubject();
 
-      virtual void SetPokePriority(int prio) { pokePriority.SetData(prio); }
-      virtual int GetPokePriority() const { return pokePriority.GetData(); }
+      virtual void SetPokePriority(int prio) { pokePriority.store(prio, std::memory_order_relaxed); }
+      virtual int GetPokePriority() const { return pokePriority.load(std::memory_order_relaxed); }
 
       // set these before creating system objects
       // todo: create 2 types of properties: one for pre-creating system objects (for example; what system objects should be created?)
@@ -86,7 +88,7 @@ namespace blunted {
     protected:
       e_ObjectType objectType;
 
-      mutable Lockable<int> pokePriority;
+      std::atomic<int> pokePriority;
 
       // request these to be set by observing objects
       mutable Lockable<Properties> requestProperties;

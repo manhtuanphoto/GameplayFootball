@@ -1,0 +1,36 @@
+=== GameplayFootball Automated Legacy Asset Library Upgrader ===
+Media Root: media
+Indexed & pre-warmed 115 texture files.
+[OK Model] media/objects/balls/generic.glb (1 submeshes, 3200 tris)
+[OK Model] media/objects/helpers/blue.glb (2 submeshes, 88 tris)
+[OK Model] media/objects/helpers/direction.glb (3 submeshes, 152 tris)
+[OK Model] media/objects/helpers/green.glb (2 submeshes, 88 tris)
+[OK Model] media/objects/helpers/largedebugcircle.glb (1 submeshes, 96 tris)
+[OK Model] media/objects/helpers/red.glb (2 submeshes, 88 tris)
+[OK Model] media/objects/helpers/smalldebugcircle.glb (1 submeshes, 96 tris)
+[OK Model] media/objects/helpers/yellow.glb (2 submeshes, 88 tris)
+[OK Model] media/objects/menu/background01.glb (1 submeshes, 200 tris)
+[OK Model] media/objects/officials/redcard.glb (1 submeshes, 12 tris)
+[OK Model] media/objects/officials/yellowcard.glb (1 submeshes, 12 tris)
+[OK Model] media/objects/players/hairstyles/bald.glb (1 submeshes, 8 tris)
+[OK Model] media/objects/players/hairstyles/long01.glb (1 submeshes, 98 tris)
+[OK Model] media/objects/players/hairstyles/medium01.glb (1 submeshes, 98 tris)
+[OK Model] media/objects/players/hairstyles/medium02.glb (1 submeshes, 98 tris)
+[OK Model] media/objects/players/hairstyles/short01.glb (1 submeshes, 98 tris)
+[OK Model] media/objects/players/hairstyles/short02.glb (1 submeshes, 98 tris)
+[OK Model] media/objects/players/models/foot.glb (3 submeshes, 126 tris)
+[OK Model] media/objects/players/models/fullbody.glb (12 submeshes, 747 tris, 13-joint GPU skinned)
+[OK Model] media/objects/players/models/head.glb (3 submeshes, 432 tris)
+[OK Model] media/objects/players/models/lowerarm.glb (2 submeshes, 300 tris)
+[OK Model] media/objects/players/models/lowerleg.glb (2 submeshes, 412 tris)
+[OK Model] media/objects/players/models/pelvis.glb (1 submeshes, 508 tris)
+[OK Model] media/objects/players/models/trunk.glb (1 submeshes, 380 tris)
+[OK Model] media/objects/players/models/upperarm.glb (2 submeshes, 628 tris)
+[OK Model] media/objects/players/models/upperleg.glb (2 submeshes, 396 tris)
+[OK Model] media/objects/stadiums/goals.glb (18 submeshes, 4152 tris)
+[OK Model] media/objects/stadiums/test/pitch.glb (4 submeshes, 128 tris)
+[OK Model] media/objects/stadiums/test/test.glb (1642 submeshes, 9104 tris)
+=== Upgrade Summary ===
+Models Converted & Verified:     29 / 29
+Animations Converted & Verified: 293 / 293
+Errors:                          0

@@ -19,34 +19,34 @@ namespace blunted {
 
     public:
       Node(const std::string &name);
-      Node(const Node &source, const std::string &postfix, boost::shared_ptr<Scene3D> scene3D);
+      Node(const Node &source, const std::string &postfix, std::shared_ptr<Scene3D> scene3D);
       virtual ~Node();
 
       virtual void Exit();
 
-      void AddNode(boost::intrusive_ptr<Node> node);
-      void DeleteNode(boost::intrusive_ptr<Node> node);
-      void GetNodes(std::vector < boost::intrusive_ptr<Node> > &gatherNodes, bool recurse = false) const;
-      boost::intrusive_ptr<Node> GetNode(const std::string &name);
+      void AddNode(blunted::intrusive_ptr<Node> node);
+      void DeleteNode(blunted::intrusive_ptr<Node> node);
+      void GetNodes(std::vector < blunted::intrusive_ptr<Node> > &gatherNodes, bool recurse = false) const;
+      blunted::intrusive_ptr<Node> GetNode(const std::string &name);
 
-      void AddObject(boost::intrusive_ptr<Object> object);
-      boost::intrusive_ptr<Object> GetObject(const std::string &name);
+      void AddObject(blunted::intrusive_ptr<Object> object);
+      blunted::intrusive_ptr<Object> GetObject(const std::string &name);
       void DeleteObject(const std::string &name, bool exitObject = true);
-      void DeleteObject(boost::intrusive_ptr<Object> object, bool exitObject = true);
+      void DeleteObject(blunted::intrusive_ptr<Object> object, bool exitObject = true);
       void DeleteAllObjects(bool exitObjects = true);
       void RemoveObject(const std::string &name);
-      void RemoveObject(boost::intrusive_ptr<Object> object);
+      void RemoveObject(blunted::intrusive_ptr<Object> object);
       void RemoveAllObjects();
 
-      void GetSpatials(std::list < boost::intrusive_ptr<Spatial> > &gatherSpatials, bool recurse = true, int depth = 0) const;
+      void GetSpatials(std::list < blunted::intrusive_ptr<Spatial> > &gatherSpatials, bool recurse = true, int depth = 0) const;
 
-      void GetObjects(std::list < boost::intrusive_ptr<Object> > &gatherObjects, bool recurse = true, int depth = 0) const;
-      void GetObjects(std::list < boost::intrusive_ptr<Object> > &gatherObjects, const vector_Planes &bounding, bool recurse = true, int depth = 0) const;
+      void GetObjects(std::list < blunted::intrusive_ptr<Object> > &gatherObjects, bool recurse = true, int depth = 0) const;
+      void GetObjects(std::list < blunted::intrusive_ptr<Object> > &gatherObjects, const vector_Planes &bounding, bool recurse = true, int depth = 0) const;
 
-      void GetObjects(std::deque < boost::intrusive_ptr<Object> > &gatherObjects, const vector_Planes &bounding, bool recurse = true, int depth = 0) const;
+      void GetObjects(std::deque < blunted::intrusive_ptr<Object> > &gatherObjects, const vector_Planes &bounding, bool recurse = true, int depth = 0) const;
 
       template <class T>
-      inline void GetObjects(e_ObjectType targetObjectType, std::list < boost::intrusive_ptr<T> > &gatherObjects, bool recurse = true, int depth = 0) const {
+      inline void GetObjects(e_ObjectType targetObjectType, std::list < blunted::intrusive_ptr<T> > &gatherObjects, bool recurse = true, int depth = 0) const {
         objects.Lock();
         int objectsSize = objects.data.size();
         for (int i = 0; i < objectsSize; i++) {
@@ -67,7 +67,7 @@ namespace blunted {
       }
 
       template <class T>
-      inline void GetObjects(e_ObjectType targetObjectType, std::list < boost::intrusive_ptr<T> > &gatherObjects, const vector_Planes &bounding, bool recurse = true, int depth = 0) const {
+      inline void GetObjects(e_ObjectType targetObjectType, std::list < blunted::intrusive_ptr<T> > &gatherObjects, const vector_Planes &bounding, bool recurse = true, int depth = 0) const {
         objects.Lock();
         int objectsSize = objects.data.size();
         for (int i = 0; i < objectsSize; i++) {
@@ -88,7 +88,7 @@ namespace blunted {
       }
 
       template <class T>
-      inline void GetObjects(e_ObjectType targetObjectType, std::deque < boost::intrusive_ptr<T> > &gatherObjects, bool recurse = true, int depth = 0) const {
+      inline void GetObjects(e_ObjectType targetObjectType, std::deque < blunted::intrusive_ptr<T> > &gatherObjects, bool recurse = true, int depth = 0) const {
         objects.Lock();
         int objectsSize = objects.data.size();
         for (int i = 0; i < objectsSize; i++) {
@@ -109,7 +109,7 @@ namespace blunted {
       }
 
       template <class T>
-      inline void GetObjects(e_ObjectType targetObjectType, std::deque < boost::intrusive_ptr<T> > &gatherObjects, const vector_Planes &bounding, bool recurse = true, int depth = 0) const {
+      inline void GetObjects(e_ObjectType targetObjectType, std::deque < blunted::intrusive_ptr<T> > &gatherObjects, const vector_Planes &bounding, bool recurse = true, int depth = 0) const {
         objects.Lock();
         int objectsSize = objects.data.size();
         for (int i = 0; i < objectsSize; i++) {
@@ -137,8 +137,8 @@ namespace blunted {
       virtual void RecursiveUpdateSpatialData(e_SpatialDataType spatialDataType, e_SystemType excludeSystem = e_SystemType_None);
 
     protected:
-      mutable Lockable < std::vector < boost::intrusive_ptr<Node> > > nodes;
-      mutable Lockable < std::vector < boost::intrusive_ptr<Object> > > objects;
+      mutable Lockable < std::vector < blunted::intrusive_ptr<Node> > > nodes;
+      mutable Lockable < std::vector < blunted::intrusive_ptr<Object> > > objects;
 
   };
 

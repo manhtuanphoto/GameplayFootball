@@ -23,7 +23,7 @@ namespace blunted {
       AudioAudioReceiver(AudioScene *audioScene);
       virtual ~AudioAudioReceiver();
 
-      virtual boost::intrusive_ptr<Interpreter> GetInterpreter(e_ObjectType objectType);
+      virtual blunted::intrusive_ptr<Interpreter> GetInterpreter(e_ObjectType objectType);
 
       virtual void SetPosition(const Vector3 &newPosition);
       Vector3 GetPosition() const;

@@ -1,7 +1,16 @@
 cmake-build*/
+build/
+build_*/
+out/
+vcpkg_installed/
+vcpkg_installed_*/
 .idea/
 .vs/
 Release/
 Debug/
+RelWithDebInfo/
+MinSizeRel/
 data/log.txt
+log.txt
+*.old_*.exe
 GameplayFootball.vcxproj.user

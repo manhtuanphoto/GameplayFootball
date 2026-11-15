@@ -23,6 +23,7 @@
 
 #include "../../AIsupport/mentalimage.hpp"
 #include "../../AIsupport/AIfunctions.hpp"
+#include "../../AIsupport/ai_adaptive_pipeline.hpp"
 
 #include "../humanoid/humanoid_utils.hpp"
 
@@ -37,6 +38,7 @@
 ElizaController::ElizaController(Match *match) : PlayerController(match) {
   lastDesiredDirection = Vector3(0);
   lastDesiredVelocity = 0;
+  pendingTakeOnKnockOn = false;
 }
 
 ElizaController::~ElizaController() {
@@ -52,6 +54,7 @@ void ElizaController::RequestCommand(PlayerCommandQueue &commandQueue) {
 
   lastSwitchTimeDuration_ms = 0;
   lastSwitchTime_ms = 0;
+  pendingTakeOnKnockOn = false;
 
   CastPlayer()->SetDesiredTimeToBall_ms(0);
 
@@ -138,85 +141,155 @@ void ElizaController::RequestCommand(PlayerCommandQueue &commandQueue) {
 
     if (team->GetController()->GetSetPieceType() == e_SetPiece_Penalty) {
 
+      float sideSign = (random(0.0f, 1.0f) < 0.5f) ? -1.0f : 1.0f;
+      float targetY = sideSign * random(1.9f, 3.3f);
+      if (random(0.0f, 1.0f) < 0.15f) targetY = random(-0.6f, 0.6f); // occasional compose down the middle
       actionCommand.desiredFunctionType = e_FunctionType_Shot;
       actionCommand.useDesiredMovement = false;
       actionCommand.useDesiredLookAt = false;
-      actionCommand.touchInfo.desiredDirection = (Vector3(-team->GetSide() * pitchHalfW, random(-5, 5), 0) - CastPlayer()->GetPosition()).GetNormalized(Vector3(-team->GetSide(), 0, 0));
-      actionCommand.touchInfo.desiredPower = random(0.4f, 1.0f);
+      actionCommand.touchInfo.desiredDirection = (Vector3(-team->GetSide() * pitchHalfW, targetY, 0) - CastPlayer()->GetPosition()).GetNormalized(Vector3(-team->GetSide(), 0, 0));
+      actionCommand.touchInfo.desiredPower = random(0.55f, 0.86f);
       commandQueue.push_back(actionCommand);
 
     } else {
 
-      actionCommand.desiredFunctionType = e_FunctionType_ShortPass;
-      actionCommand.useDesiredMovement = false;
-      actionCommand.useDesiredLookAt = false;
-      actionCommand.touchInfo.inputDirection = player->GetDirectionVec();
-      actionCommand.touchInfo.inputPower = 0.5f;
-      actionCommand.touchInfo.autoDirectionBias = 1.0f;
-      actionCommand.touchInfo.autoPowerBias = 1.0f;
+      Vector3 ballPos = match->GetBall()->Predict(0).Get2D();
+      Vector3 oppGoalCenter(-team->GetSide() * pitchHalfW, 0, 0);
+      float distToOppGoal = (ballPos - oppGoalCenter).GetLength();
 
-      actionCommand.touchInfo.forcedTargetPlayer = 0;
+      // Direct free-kick shot when within dangerous range & good angle
+      float maxDirectFKDist = match->IsFreeKickMode() ? 33.5f : 29.0f;
+      float directFKChance = match->IsFreeKickMode()
+                                 ? (0.82f + 0.15f * CastPlayer()->GetStat("technical_shot"))
+                                 : (0.58f + 0.35f * CastPlayer()->GetStat("technical_shot"));
+      if (team->GetController()->GetSetPieceType() == e_SetPiece_FreeKick &&
+          distToOppGoal < maxDirectFKDist && fabs(ballPos.coords[1]) < 20.0f &&
+          random(0.0f, 1.0f) < directFKChance) {
+        float targetY = (ballPos.coords[1] > 0.0f) ? random(-3.20f, -1.25f) : random(1.25f, 3.20f);
+        if (random(0.0f, 1.0f) < 0.38f) targetY = -targetY;
+        actionCommand.desiredFunctionType = e_FunctionType_Shot;
+        actionCommand.useDesiredMovement = false;
+        actionCommand.useDesiredLookAt = false;
+        actionCommand.desiredVelocityFloat = dribbleVelocity;
+        actionCommand.touchInfo.desiredDirection = (Vector3(-team->GetSide() * (pitchHalfW + 1.0f), targetY, 0) - ballPos).GetNormalized(Vector3(-team->GetSide(), 0, 0));
+        actionCommand.touchInfo.autoDirectionBias = 1.0f;
+        actionCommand.touchInfo.desiredPower = clamp(0.56f + (distToOppGoal / 44.0f) * 0.35f, 0.55f, 0.92f);
+        commandQueue.push_back(actionCommand);
+      } else {
 
-      Vector3 desiredTargetPosition;
-      bool doCommand = true;
-
-      if (team->GetController()->GetSetPieceType() == e_SetPiece_GoalKick) {
-        if (random(0.0f, 1.0f) > 0.4f && team->GetHumanGamerCount() == 0) {
-          actionCommand.desiredFunctionType = e_FunctionType_HighPass;
-          desiredTargetPosition = Vector3((pitchHalfW * -team->GetSide()) * 0.2f, random(-pitchHalfH, pitchHalfH), 0.0f);
-        } else {
-          actionCommand.desiredFunctionType = e_FunctionType_ShortPass;
-          desiredTargetPosition = Vector3(player->GetPosition().coords[0] * 0.9f, random(-pitchHalfH, pitchHalfH), 0.0f);
-        }
-
-      } else if (team->GetController()->GetSetPieceType() == e_SetPiece_KickOff) {
         actionCommand.desiredFunctionType = e_FunctionType_ShortPass;
-        desiredTargetPosition = player->GetPosition() + player->GetDirectionVec() * 1.0f;
+        actionCommand.useDesiredMovement = false;
+        actionCommand.useDesiredLookAt = false;
+        actionCommand.touchInfo.inputDirection = player->GetDirectionVec();
+        actionCommand.touchInfo.inputPower = 0.5f;
+        actionCommand.touchInfo.autoDirectionBias = 1.0f;
+        actionCommand.touchInfo.autoPowerBias = 1.0f;
 
-      } else if (team->GetController()->GetSetPieceType() == e_SetPiece_FreeKick) {
-        if (random(0.0f, 1.0f) > 0.5f) {
-          actionCommand.desiredFunctionType = e_FunctionType_HighPass;
-          desiredTargetPosition = Vector3(pitchHalfW * -team->GetSide(), random(-10.0f, 10.0f), 0.0f);
-        } else {
+        actionCommand.touchInfo.forcedTargetPlayer = 0;
+
+        Vector3 desiredTargetPosition = player->GetPosition() + Vector3(-team->GetSide() * 12.0f, 0, 0);
+        bool doCommand = true;
+
+        std::vector<Player*> mates;
+        team->GetActivePlayers(mates);
+
+        if (team->GetController()->GetSetPieceType() == e_SetPiece_GoalKick) {
+          Player *bestTarget = 0;
+          float bestScore = -100.0f;
+          bool goLong = (random(0.0f, 1.0f) > 0.55f && team->GetHumanGamerCount() == 0);
+          actionCommand.desiredFunctionType = goLong ? e_FunctionType_HighPass : e_FunctionType_ShortPass;
+          for (unsigned int i = 0; i < mates.size(); i++) {
+            if (mates.at(i) == CastPlayer()) continue;
+            float d = (mates.at(i)->GetPosition() - ballPos).GetLength();
+            if (!goLong && (d < 10.0f || d > 34.0f)) continue;
+            if (goLong && (d < 28.0f || d > 62.0f)) continue;
+            float freeSpace = AI_CalculateFreeSpace(match, _mentalImage, team->GetID(), mates.at(i)->GetPosition(), 10.0f, 0.6f, true);
+            float score = freeSpace * 2.0f + random(0.0f, 0.35f);
+            if (score > bestScore) {
+              bestScore = score;
+              bestTarget = mates.at(i);
+            }
+          }
+          if (bestTarget) actionCommand.touchInfo.forcedTargetPlayer = bestTarget;
+          else desiredTargetPosition = Vector3(player->GetPosition().coords[0] * 0.7f, random(-pitchHalfH * 0.7f, pitchHalfH * 0.7f), 0.0f);
+
+        } else if (team->GetController()->GetSetPieceType() == e_SetPiece_KickOff) {
           actionCommand.desiredFunctionType = e_FunctionType_ShortPass;
-          desiredTargetPosition = player->GetPosition() + Vector3(-team->GetSide() * 10.0f, random(-10.0f, 10.0f), 0.0f);
-        }
+          desiredTargetPosition = player->GetPosition() + Vector3(team->GetSide() * 3.0f, random(-4.0f, 4.0f), 0.0f);
 
-      } else if (team->GetController()->GetSetPieceType() == e_SetPiece_Corner) {
-        if (random(0.0f, 1.0f) > 0.3f) {
-          actionCommand.desiredFunctionType = e_FunctionType_HighPass;
-          desiredTargetPosition = Vector3((pitchHalfW * -team->GetSide()) * (0.99f - random(0.0f, 0.12f)), random(-10.0f, 10.0f), 0.0f);
-        } else {
+        } else if (team->GetController()->GetSetPieceType() == e_SetPiece_FreeKick) {
+          if (distToOppGoal < 42.0f && random(0.0f, 1.0f) > 0.38f) {
+            actionCommand.desiredFunctionType = e_FunctionType_HighPass;
+            desiredTargetPosition = Vector3((pitchHalfW - random(7.5f, 13.0f)) * -team->GetSide(), random(-6.5f, 6.5f), 0.0f);
+          } else {
+            actionCommand.desiredFunctionType = e_FunctionType_ShortPass;
+            Player *bestShort = 0;
+            float bestScore = -100.0f;
+            for (unsigned int i = 0; i < mates.size(); i++) {
+              if (mates.at(i) == CastPlayer() || mates.at(i)->GetFormationEntry().role == e_PlayerRole_GK) continue;
+              float d = (mates.at(i)->GetPosition() - ballPos).GetLength();
+              if (d < 6.0f || d > 28.0f) continue;
+              float freeSpace = AI_CalculateFreeSpace(match, _mentalImage, team->GetID(), mates.at(i)->GetPosition(), 9.0f, 0.5f, true);
+              float prog = (mates.at(i)->GetPosition().coords[0] - ballPos.coords[0]) * -team->GetSide() * 0.03f;
+              if (freeSpace + prog > bestScore) {
+                bestScore = freeSpace + prog;
+                bestShort = mates.at(i);
+              }
+            }
+            if (bestShort) actionCommand.touchInfo.forcedTargetPlayer = bestShort;
+            else desiredTargetPosition = player->GetPosition() + Vector3(-team->GetSide() * 12.0f, random(-8.0f, 8.0f), 0.0f);
+          }
+
+        } else if (team->GetController()->GetSetPieceType() == e_SetPiece_Corner) {
+          if (random(0.0f, 1.0f) > 0.22f) {
+            actionCommand.desiredFunctionType = e_FunctionType_HighPass;
+            // Deliver dangerous ball into near-post, penalty spot, or far-post zone
+            desiredTargetPosition = Vector3((pitchHalfW - random(6.0f, 11.5f)) * -team->GetSide(), random(-5.0f, 5.0f), 0.0f);
+          } else {
+            actionCommand.desiredFunctionType = e_FunctionType_ShortPass;
+            desiredTargetPosition = Vector3((pitchHalfW * -team->GetSide()) * 0.82f, player->GetPosition().coords[1] * 0.78f, 0.0f);
+          }
+
+        } else if (team->GetController()->GetSetPieceType() == e_SetPiece_ThrowIn) {
           actionCommand.desiredFunctionType = e_FunctionType_ShortPass;
-          desiredTargetPosition = Vector3((pitchHalfW * -team->GetSide()) * 0.8f, player->GetPosition().coords[1] * 0.8f, 0.0f);
-        }
+          Player *bestThrowTarget = 0;
+          float bestScore = -100.0f;
+          for (unsigned int i = 0; i < mates.size(); i++) {
+            if (mates.at(i) == CastPlayer() || mates.at(i)->GetFormationEntry().role == e_PlayerRole_GK) continue;
+            float d = (mates.at(i)->GetPosition() - ballPos).GetLength();
+            if (d > 22.0f) continue;
+            float freeSpace = AI_CalculateFreeSpace(match, _mentalImage, team->GetID(), mates.at(i)->GetPosition(), 8.0f, 0.45f, true);
+            float score = freeSpace * 1.6f - d * 0.03f + ((mates.at(i)->GetPosition().coords[0] - ballPos.coords[0]) * -team->GetSide()) * 0.02f;
+            if (score > bestScore) {
+              bestScore = score;
+              bestThrowTarget = mates.at(i);
+            }
+          }
+          if (bestThrowTarget) actionCommand.touchInfo.forcedTargetPlayer = bestThrowTarget;
+          else desiredTargetPosition = player->GetPosition();
 
-      } else if (team->GetController()->GetSetPieceType() == e_SetPiece_ThrowIn) {
-        actionCommand.desiredFunctionType = e_FunctionType_ShortPass;
-        desiredTargetPosition = player->GetPosition(); // closest to player
+        } else if (match->GetBallRetainer() == player) { // keeper fetched ball
+          actionCommand.desiredFunctionType = (random(0.0f, 1.0f) > 0.45f) ? e_FunctionType_ShortPass : e_FunctionType_HighPass;
+          desiredTargetPosition = Vector3(pitchHalfW * team->GetSide() * 0.45f, random(-pitchHalfH * 0.8f, pitchHalfH * 0.8f), 0.0f);
+          Player *targetPlayer = AI_GetClosestPlayer(team, desiredTargetPosition, false, CastPlayer());
 
-      } else if (match->GetBallRetainer() == player) { // keeper fetched ball, probably
-        actionCommand.desiredFunctionType = e_FunctionType_HighPass;
-        desiredTargetPosition = Vector3(pitchHalfW * team->GetSide(), random(-pitchHalfH, pitchHalfH), 0.0f);
-        Player *targetPlayer = AI_GetClosestPlayer(team, desiredTargetPosition, false, CastPlayer());
-
-        if (targetPlayer) {
-          // check if this player is away from opponents, before throwing ball to him
-          Player *closestOpp = AI_GetClosestPlayer(match->GetTeam(abs(team->GetID() - 1)), targetPlayer->GetPosition(), false, 0);
-          if (closestOpp) {
-            if (((closestOpp->GetPosition() + closestOpp->GetMovement() * 0.1f) - targetPlayer->GetPosition()).GetLength() > 10.0f || CastPlayer()->GetPossessionDuration_ms() > 4000) { // last touch bias is maximum so he won't hold forever
-              actionCommand.touchInfo.forcedTargetPlayer = targetPlayer;
-            } else {
-              doCommand = false;
+          if (targetPlayer) {
+            Player *closestOpp = AI_GetClosestPlayer(match->GetTeam(abs(team->GetID() - 1)), targetPlayer->GetPosition(), false, 0);
+            if (closestOpp) {
+              if (((closestOpp->GetPosition() + closestOpp->GetMovement() * 0.1f) - targetPlayer->GetPosition()).GetLength() > 9.5f || CastPlayer()->GetPossessionDuration_ms() > 3800) {
+                actionCommand.touchInfo.forcedTargetPlayer = targetPlayer;
+              } else {
+                doCommand = false;
+              }
             }
           }
         }
-      }
 
-      if (doCommand) {
-        if (actionCommand.touchInfo.forcedTargetPlayer == 0) actionCommand.touchInfo.forcedTargetPlayer = AI_GetClosestPlayer(team, desiredTargetPosition, false, CastPlayer());
-        AI_GetPass(CastPlayer(), actionCommand.desiredFunctionType, actionCommand.touchInfo.inputDirection, actionCommand.touchInfo.inputPower, actionCommand.touchInfo.autoDirectionBias, actionCommand.touchInfo.autoPowerBias, actionCommand.touchInfo.desiredDirection, actionCommand.touchInfo.desiredPower, actionCommand.touchInfo.targetPlayer, actionCommand.touchInfo.forcedTargetPlayer);
-        commandQueue.push_back(actionCommand);
+        if (doCommand) {
+          if (actionCommand.touchInfo.forcedTargetPlayer == 0) actionCommand.touchInfo.forcedTargetPlayer = AI_GetClosestPlayer(team, desiredTargetPosition, false, CastPlayer());
+          AI_GetPass(CastPlayer(), actionCommand.desiredFunctionType, actionCommand.touchInfo.inputDirection, actionCommand.touchInfo.inputPower, actionCommand.touchInfo.autoDirectionBias, actionCommand.touchInfo.autoPowerBias, actionCommand.touchInfo.desiredDirection, actionCommand.touchInfo.desiredPower, actionCommand.touchInfo.targetPlayer, actionCommand.touchInfo.forcedTargetPlayer);
+          commandQueue.push_back(actionCommand);
+        }
       }
     }
 
@@ -290,10 +363,11 @@ void ElizaController::RequestCommand(PlayerCommandQueue &commandQueue) {
     if (CastPlayer() != match->GetDesignatedPossessionPlayer()) manualMovement = true;
     goalieStrategy->RequestInput(keeperMentalImage, manualMovementDirection, manualMovementVelocityFloat);
 
-    //if (boundForGoal && hasUniquePossession) printf("has unique possession, so no deflect anims (poss: %f)\n", possessionAmount);
-    if (!hasUniquePossession || possessionAmount < 3.4f) {
-      bool onlyPickupAnims = false;
-      if (!boundForGoal && possessionAmount > 1.3f) onlyPickupAnims = true;
+    float ballSpeed = match->GetBall()->GetMovement().GetLength();
+    float oppDist = (_oppPlayer ? (_oppPlayer->GetPosition() - player->GetPosition()).GetLength() : 30.0f);
+
+    if (boundForGoal || !hasUniquePossession || possessionAmount < 4.2f || ballSpeed > 2.0f || oppDist < 18.0f) {
+      bool onlyPickupAnims = (!boundForGoal && ballSpeed < 10.5f && possessionAmount > 1.25f);
       _KeeperDeflectCommand(commandQueue, onlyPickupAnims);
     }
 
@@ -303,13 +377,26 @@ void ElizaController::RequestCommand(PlayerCommandQueue &commandQueue) {
   }
 
   bool forceMagnet = false;
+  bool isSecondPresser = false;
 
-  // team pressure
+  // collective team pressure (1st ball presser + 2nd passing-lane cover shadow)
   float ballDistance = _mentalImage->GetBallPrediction(0).Get2D().GetDistance(player->GetPosition());
   if (match->IsInPlay() && !match->IsInSetPiece() &&
-      ((team->GetController()->GetEndApplyTeamPressure_ms() > match->GetActualTime_ms() && team->GetController()->GetTeamPressurePlayer() == player) /*|| (player == team->GetDesignatedTeamPossessionPlayer() && ballDistance < 8.0f && CastPlayer()->GetManMarkingID() == -1) */) &&
       !teamHasBestPossession && match->GetDesignatedPossessionPlayer() != player && CastPlayer()->GetFormationEntry().role != e_PlayerRole_GK) {
-    forceMagnet = true;
+    if (team->GetController()->GetEndApplyTeamPressure_ms() > match->GetActualTime_ms()) {
+      if (team->GetController()->GetTeamPressurePlayer() == player) {
+        forceMagnet = true;
+      } else if (team->GetController()->GetSecondTeamPressurePlayer() == player) {
+        isSecondPresser = true;
+      }
+    }
+  }
+
+  bool byAnyMeans = false;
+  if (match->IsInPlay() && !match->IsInSetPiece() && match->GetDesignatedPossessionPlayer() != player) {
+    AIAdaptiveRegistry::Instance().AdaptOffBallPursuitAndLunge(
+        match, _mentalImage, CastPlayer(), teamHasBestPossession, possessionAmount,
+        rawInputDirection, rawInputVelocityFloat, forceMagnet, extraHaste, byAnyMeans);
   }
 
   _SetInput(rawInputDirection, rawInputVelocityFloat);
@@ -320,13 +407,12 @@ void ElizaController::RequestCommand(PlayerCommandQueue &commandQueue) {
   if (match->IsInPlay() && !match->IsInSetPiece()) {
 
     // ball control?
-    _BallControlCommand(commandQueue, false, false, false); // last param true == enable sticky run direction.
+    _BallControlCommand(commandQueue, false, pendingTakeOnKnockOn, false); // last param true == enable sticky run direction.
 
     // trap?
     _TrapCommand(commandQueue);
 
     // interfere?
-    bool byAnyMeans = false;
     _InterfereCommand(commandQueue, byAnyMeans);
 
     // sliding?
@@ -348,11 +434,35 @@ void ElizaController::RequestCommand(PlayerCommandQueue &commandQueue) {
 
       if (forceMagnet) {
 
-        // make sure the movement command magnets get the best input (which is then used as 'hint' for the 'toball' functions)
+        // Active 1st-defender ball press: close down along goal-side angle at decisive speed
+        float closeDist = (opp->GetPosition() - CastPlayer()->GetPosition()).GetLength();
+        float standOff = clamp(0.18f + closeDist * 0.04f, 0.18f, 0.65f);
+        Vector3 defendPosition = GetDefendPosition(opp, standOff);
+        Vector3 toDefend = defendPosition - CastPlayer()->GetPosition();
+        inputDirection = toDefend.GetNormalized(CastPlayer()->GetDirectionVec());
+        float pressSpeedBoost = 0.78f + 0.22f * GetMatch()->GetMatchDifficulty();
+        inputVelocityFloat = clamp(toDefend.GetLength() * distanceToVelocityMultiplier * 1.25f * pressSpeedBoost, dribbleVelocity, sprintVelocity);
+        if (closeDist < 4.8f && possessionAmount > 0.65f) {
+          extraHaste = true;
+        }
 
-        inputDirection = Vector3(team->GetSide() * pitchHalfW, 0, 0) - CastPlayer()->GetPosition();
-        inputVelocityFloat = idleVelocity;
-        inputDirection.Normalize(CastPlayer()->GetDirectionVec());
+      } else if (isSecondPresser) {
+
+        // 2nd-defender cover shadow: cut off the highest-danger short passing lane
+        int targetID = team->GetController()->GetSecondTeamPressureTargetID();
+        Player *passTargetOpp = (targetID >= 0) ? match->GetPlayer(targetID) : 0;
+        if (passTargetOpp) {
+          Vector3 oppPos = opp->GetPosition() + opp->GetMovement() * 0.18f;
+          Vector3 targetPos = passTargetOpp->GetPosition() + passTargetOpp->GetMovement() * 0.22f;
+          Vector3 coverSpot = oppPos * 0.36f + targetPos * 0.64f;
+          // Stay slightly goal-side of the passing lane
+          coverSpot.coords[0] += team->GetSide() * 0.8f;
+          Vector3 toCover = coverSpot - CastPlayer()->GetPosition();
+          if (toCover.GetLength() > 0.45f) {
+            inputDirection = toCover.GetNormalized(inputDirection);
+            inputVelocityFloat = clamp(toCover.GetLength() * distanceToVelocityMultiplier * 1.1f, walkVelocity * 0.8f, sprintVelocity);
+          }
+        }
 
       } else if (!teamHasBestPossession && CastPlayer()->GetManMarkingID() == -1 && ((opp->GetPosition() + opp->GetMovement() * 0.12f) - (CastPlayer()->GetPosition() + CastPlayer()->GetMovement() * 0.04f)).GetLength() < huntDistanceThreshold) { // defend player
 
@@ -404,6 +514,12 @@ void ElizaController::RequestCommand(PlayerCommandQueue &commandQueue) {
     inputVelocityFloat = RangeVelocity(inputVelocityFloat); // emulate controller quantization
 
     _MovementCommand(commandQueue, forceMagnet, extraHaste);
+
+    if (!commandQueue.empty()) {
+      bool isCarrier = (match->GetDesignatedPossessionPlayer() == player);
+      AIAdaptiveRegistry::Instance().AdaptFinalMovementCommand(
+          match, _mentalImage, CastPlayer(), isCarrier, commandQueue.back());
+    }
 
   } else { // keeper?
 
@@ -792,6 +908,9 @@ Vector3 ElizaController::GetSupportPosition_ForceField(const MentalImage *mental
 
   Vector3 forceFieldPosition = currentPos + AI_GetForceFieldMovement(forceField, currentPos, 7);//8);
 
+  forceFieldPosition = AIAdaptiveRegistry::Instance().AdaptSupportPositionCorridors(
+      match, mentalImage, CastPlayer(), designatedPlayer, forceFieldPosition);
+
   float margin = 0.08f;
   if (forceNoOffside) if (forceFieldPosition.coords[0] * -team->GetSide() > (offsideX * -team->GetSide()) - margin) forceFieldPosition.coords[0] = offsideX - (margin * -team->GetSide());
 
@@ -804,176 +923,390 @@ Vector3 ElizaController::GetSupportPosition_ForceField(const MentalImage *mental
 void ElizaController::Reset() {
   lastDesiredDirection = Vector3(0);
   lastDesiredVelocity = 0;
+  pendingTakeOnKnockOn = false;
 }
 
 void ElizaController::GetOnTheBallCommands(std::vector<PlayerCommand> &commandQueue, Vector3 &rawInputDirection, float &rawInputVelocityFloat) {
 
-  float oneTouchIsHard = 0.0f;
   float movementDiff = NormalizedClamp((match->GetBall()->GetMovement() - CastPlayer()->GetMovement()).GetLength(), 0.0f, 10.0f);
-  oneTouchIsHard = movementDiff - CastPlayer()->GetStat("technical_shortpass") * movementDiff * 0.8f;
+  float oneTouchIsHard = (movementDiff - CastPlayer()->GetStat("technical_shortpass") * movementDiff * 0.8f) * 0.35f;
 
   std::vector<PlayerImage> opponentPlayerImages;
   _mentalImage->GetTeamPlayerImages(abs(team->GetID() - 1), -1, opponentPlayerImages);
 
+  signed int side = team->GetSide(); // +1 defends +X (attacks -X), -1 defends -X (attacks +X)
+  float attSign = (float)(-side);
+  Vector3 myPos = CastPlayer()->GetPosition();
+  Vector3 oppGoalCenter(pitchHalfW * attSign, 0.0f, 0.0f);
 
-  // DECIDE WHAT TO DO
+  // Expected Threat (xT) surface: rewards pitch progression, central/half-space access, and penalty-box proximity
+  auto calcExpectedThreat = [&](const Vector3 &pos) -> float {
+    float normX = clamp((pos.coords[0] * attSign + pitchHalfW) / (pitchHalfW * 2.0f), 0.0f, 1.0f);
+    float normY = clamp(fabs(pos.coords[1]) / pitchHalfH, 0.0f, 1.0f);
+    float centrality = 1.0f - std::pow(normY, 1.35f) * 0.55f;
+    float baseProgression = std::pow(normX, 1.75f) * centrality;
+    float boxDist = (pos - Vector3((pitchHalfW - 10.0f) * attSign, 0.0f, 0.0f)).GetLength();
+    float boxThreat = std::pow(1.0f - NormalizedClamp(boxDist, 0.0f, 26.0f), 1.6f) * 0.55f;
+    return clamp(baseProgression * 0.72f + boxThreat, 0.0f, 1.2f);
+  };
 
-  float longPossessionFactor = std::pow(NormalizedClamp(CastPlayer()->GetPossessionDuration_ms(), 0, 5000), 2.0f);
-
-  // first selection
-  float forwardSpaceWeight = 0.4f;
-  float spaceWeight = 0.3f;
-  float forwardWeight = 2.0f + AI_GetMindSet(CastPlayer()->GetDynamicFormationEntry().role) * 6.0f;
-
-  float totalWeight1 = forwardSpaceWeight + spaceWeight + forwardWeight;
-  float tacticalImprovementThreshold = 0.06f * (1.0f - AI_GetMindSet(CastPlayer()->GetDynamicFormationEntry().role)); // only go on with pass selection if recipient has this much tactical advantage over current player
-
-  // second selection
-  float tacticalDiffWeight =
-      1.0f +
-      std::pow(AI_GetMindSet(CastPlayer()->GetDynamicFormationEntry().role),
-               2.0f) *
-          10.0f;
-  float passWeight = 1.0f;
-  float passMinimum = 0.2f * (1.0f - AI_GetMindSet(CastPlayer()->GetDynamicFormationEntry().role)) - longPossessionFactor * 0.1f;
-
-  float totalWeight2 = tacticalDiffWeight + passWeight;
-
-  // name says it all
-  float passThreshold = 0.1f - longPossessionFactor * 0.05f;
-
-  // self rating
+  float mindSet = AI_GetMindSet(CastPlayer()->GetDynamicFormationEntry().role);
+  float longPossessionFactor = std::pow(NormalizedClamp(CastPlayer()->GetPossessionDuration_ms(), 0, 4200), 1.6f);
   const TacticalPlayerSituation &sit = CastPlayer()->GetTacticalSituation();
-  float tacticalRating = sit.forwardSpaceRating * forwardSpaceWeight +
-                         sit.spaceRating * spaceWeight +
-                         sit.forwardRating * forwardWeight;
 
-  tacticalRating /= totalWeight1;
+  // Compute pressure on ball carrier & separate outfield blockers from the Goalkeeper
+  float closestOppDist = 30.0f;
+  float closestOutfieldOppDist = 30.0f;
+  int outfieldAheadInLaneCount = 0;
+  Vector3 keeperPos = oppGoalCenter;
+  Vector3 keeperRawPos = oppGoalCenter;
+  Vector3 keeperVel(0, 0, 0);
+  bool foundOppKeeper = false;
+  std::vector<PlayerImage> outfieldOpponentImages;
+  outfieldOpponentImages.reserve(opponentPlayerImages.size());
 
-  // collect pass target candidates
+  for (unsigned int o = 0; o < opponentPlayerImages.size(); o++) {
+    Vector3 predOpp = opponentPlayerImages.at(o).position + opponentPlayerImages.at(o).movement * 0.18f;
+    float d = (predOpp - (myPos + CastPlayer()->GetMovement() * 0.12f)).GetLength();
+    if (d < closestOppDist) closestOppDist = d;
+    if (opponentPlayerImages.at(o).dynamicFormationEntry.role == e_PlayerRole_GK) {
+      keeperRawPos = opponentPlayerImages.at(o).position;
+      keeperVel = opponentPlayerImages.at(o).movement;
+      keeperPos = keeperRawPos + keeperVel * 0.24f;
+      foundOppKeeper = true;
+    } else {
+      outfieldOpponentImages.push_back(opponentPlayerImages.at(o));
+      if (d < closestOutfieldOppDist) closestOutfieldOppDist = d;
+      float aheadX = (predOpp.coords[0] - myPos.coords[0]) * attSign;
+      if (aheadX > 0.2f && fabs(predOpp.coords[1] - myPos.coords[1]) < 4.5f) {
+        outfieldAheadInLaneCount++;
+      }
+    }
+  }
+  float underPressure = 1.0f - NormalizedClamp(closestOutfieldOppDist, 1.4f, 8.5f);
+
+  // 1. Evaluate Dribble Utility (carrying into open space) + Player-Centric Adaptive Profile
+  PlayerDispositionProfile disposition = AIAdaptiveRegistry::Instance().BuildDispositionProfile(match, CastPlayer());
+  DefenderMomentumInfo defMomentum = AIAdaptiveRegistry::Instance().AnalyzeDefenderSituations(match, CastPlayer(), opponentPlayerImages);
+
+  float myXT = calcExpectedThreat(myPos);
+  Vector3 projectedCarryPos = myPos + Vector3(attSign * 7.5f, -myPos.coords[1] * 0.15f, 0.0f);
+  float carryXT = calcExpectedThreat(projectedCarryPos);
+  float distToGoalNow = (oppGoalCenter - myPos).GetLength();
+  float distToKeeperNow = (keeperPos - myPos).GetLength();
+  // Prevent "walking the ball into the net": carrying straight into a closing GK loses value rapidly inside 16m
+  if (distToGoalNow < 16.5f) {
+    float gkCrowdPenalty = (1.0f - NormalizedClamp(distToKeeperNow, 2.8f, 9.5f)) * 0.42f +
+                           (1.0f - NormalizedClamp(distToGoalNow, 6.5f, 16.5f)) * 0.28f;
+    carryXT = std::max(0.15f, carryXT - gkCrowdPenalty);
+  }
+  float dribbleSkill = 0.5f * CastPlayer()->GetStat("technical_dribble") + 0.5f * CastPlayer()->GetStat("physical_velocity");
+  float dribbleOffenseTactic = team->GetTeamData()->GetTactics().userProperties.GetReal("dribble_offensiveness", 0.5f);
+
+  float dribbleUtility = myXT * 0.45f +
+                         carryXT * (0.28f + 0.24f * sit.forwardSpaceRating) +
+                         sit.forwardSpaceRating * (0.22f + 0.14f * dribbleSkill + 0.08f * dribbleOffenseTactic) +
+                         sit.spaceRating * 0.12f -
+                         underPressure * (0.26f - 0.10f * dribbleSkill) -
+                         longPossessionFactor * 0.16f;
+  if (distToGoalNow < 15.5f && outfieldAheadInLaneCount == 0) {
+    // 1v1 with Keeper: carrying further shrinks shooting angle around GK's feet!
+    dribbleUtility -= (1.0f - NormalizedClamp(distToKeeperNow, 3.0f, 10.5f)) * 0.30f;
+  }
+  if (CastPlayer()->GetFormationEntry().role == e_PlayerRole_GK) {
+    dribbleUtility -= 0.45f; // keeper prefers distributing rather than dribbling out
+  }
+
+  // 2. Evaluate Pass Candidates (Short Pass, Through Ball, Cross, Switch of Play)
+  float offsideX = AI_GetOffsideLine(match, _mentalImage, abs(team->GetID() - 1), 240);
+  Player *attackingRunner = (team->GetController()->GetEndApplyAttackingRun_ms() > match->GetActualTime_ms())
+                                ? team->GetController()->GetAttackingRunPlayer()
+                                : 0;
+  Player *supportRunner = team->GetController()->GetForwardSupportPlayer();
+
   std::vector<Player*> mates;
   team->GetActivePlayers(mates);
 
-  struct MateRating {
-    Player *player;
-    float tacticalRating;
-    float tacticalDiffRating;
-    float passRating;
-    float proximityRating;
-    e_FunctionType passType;
-  };
+  Player *bestPassTarget = 0;
+  e_FunctionType bestPassType = e_FunctionType_ShortPass;
+  float bestPassUtility = -1.0f;
+  float bestPassOdds = 0.0f;
 
-  float bestTotalRating = 0.0f;
-  MateRating bestMateRating;
-  TacticalPlayerSituation bestMateSit;
-  bestMateRating.player = 0;
-  bestMateRating.passRating = 0.0f;
-  bestMateRating.passType = e_FunctionType_ShortPass;
+  float minSafePassOdds = clamp(0.24f - mindSet * 0.10f - underPressure * 0.08f, 0.08f, 0.30f);
+
+  Vector3 directionVec = CastPlayer()->GetDirectionVec();
+
   for (unsigned int i = 0; i < mates.size(); i++) {
+    Player *mate = mates.at(i);
+    if (mate == CastPlayer()) continue;
 
-    if (mates.at(i) != CastPlayer()) {
+    PlayerImage mateImg = _mentalImage->GetPlayerImage(mate->GetID());
+    Vector3 matePos = mateImg.position;
+    Vector3 mateVel = mateImg.movement;
+    float passDist = (matePos - myPos).GetLength();
+    if (passDist < 3.0f || passDist > 58.0f) continue;
 
-      const TacticalPlayerSituation &mateSit = mates.at(i)->GetTacticalSituation();
+    // Offside check for forward passes (using MentalImage perceived position & velocity)
+    bool mateAheadOfBall = (matePos.coords[0] * attSign > (myPos.coords[0] * attSign + 0.3f));
+    float predictedMateX = (matePos.coords[0] + mateVel.coords[0] * 0.26f);
+    if (mateAheadOfBall && predictedMateX * attSign > offsideX * attSign - 0.25f) {
+      continue; // offside!
+    }
 
-      float mateTacticalRating = mateSit.forwardSpaceRating * forwardSpaceWeight +
-                                 mateSit.spaceRating * spaceWeight +
-                                 mateSit.forwardRating * forwardWeight;
+    // Original baseline mechanical body-direction penalty (front 180 deg = 1.0, rear 180 deg = 0.3 .. 1.0)
+    float bodyDirPenalty = directionVec.GetDotProduct((matePos - myPos).GetNormalized(Vector3(attSign, 0, 0)));
+    bodyDirPenalty = clamp(bodyDirPenalty, -1.0f, 0.0f) + 1.0f;
+    bodyDirPenalty = bodyDirPenalty * 0.7f + 0.3f;
 
-      mateTacticalRating /= totalWeight1;
-      if (mates.at(i)->GetFormationEntry().role == e_PlayerRole_GK) mateTacticalRating *= 0.7f; // don't like playing back to goalie
+    const TacticalPlayerSituation &mateSit = mate->GetTacticalSituation();
+    float mateXT = calcExpectedThreat(matePos + mateVel * 0.35f);
+    if (mate->GetFormationEntry().role == e_PlayerRole_GK) {
+      mateXT *= 0.45f; // only recycle to GK when heavily pressed with no forward options
+    }
 
-      MateRating mateRating;
-      mateRating.player = mates.at(i);
-      mateRating.tacticalRating = mateTacticalRating;
+    float oddsShort = (passDist < 38.0f) ? (_GetPassingOdds(mate, e_FunctionType_ShortPass, opponentPlayerImages) * bodyDirPenalty) : 0.0f;
+    float oddsLong  = (passDist > 7.0f && passDist < 46.0f) ? (_GetPassingOdds(mate, e_FunctionType_LongPass, opponentPlayerImages) * bodyDirPenalty) : 0.0f;
+    float oddsHigh  = (passDist > 13.0f) ? (_GetPassingOdds(mate, e_FunctionType_HighPass, opponentPlayerImages) * bodyDirPenalty) : 0.0f;
 
-      if (mateTacticalRating > tacticalRating + tacticalImprovementThreshold) {
+    // Context bonuses for specialized pass types
+    bool isRunner = (mate == attackingRunner || mate == supportRunner ||
+                     (mateVel.coords[0] * attSign > 3.2f && AI_GetMindSet(mate->GetDynamicFormationEntry().role) >= 0.5f));
+    bool isThroughBallWindow = isRunner && mateSit.forwardSpaceRating > 0.45f &&
+                               (predictedMateX + attSign * passDist * 0.16f) * attSign < (offsideX * attSign + 1.5f);
 
-        float tacticalDiffRating = mateRating.tacticalRating - tacticalRating;
+    bool isWideCrossWindow = (myPos.coords[0] * attSign > pitchHalfW * 0.56f && fabs(myPos.coords[1]) > 13.5f &&
+                              matePos.coords[0] * attSign > pitchHalfW * 0.68f && fabs(matePos.coords[1]) < 12.5f);
 
-        mateRating.tacticalDiffRating = tacticalDiffRating;
-        float passingOddsShort = _GetPassingOdds(mates.at(i), e_FunctionType_ShortPass, opponentPlayerImages);
-        float passingOddsLong  = _GetPassingOdds(mates.at(i), e_FunctionType_LongPass,  opponentPlayerImages);
-        float passingOddsHigh  = _GetPassingOdds(mates.at(i), e_FunctionType_HighPass,  opponentPlayerImages);
-        if (passingOddsShort >= passingOddsLong && passingOddsShort >= passingOddsHigh) {
-          mateRating.passRating = passingOddsShort;
-          mateRating.passType = e_FunctionType_ShortPass;
-        } else if (passingOddsLong >= passingOddsHigh) {
-          mateRating.passRating = passingOddsLong;
-          mateRating.passType = e_FunctionType_LongPass;
-        } else {
-          mateRating.passRating = passingOddsHigh;
-          mateRating.passType = e_FunctionType_HighPass;
-        }
+    bool isSwitchPlayWindow = (fabs(matePos.coords[1] - myPos.coords[1]) > 22.0f &&
+                               mateSit.spaceRating > 0.62f && sit.spaceRating < 0.52f);
 
-        float totalRating = mateRating.tacticalDiffRating * tacticalDiffWeight +
-                            mateRating.passRating * passWeight -
-                            oneTouchIsHard;
+    // Score each viable pass type for this teammate
+    float candOdds = oddsShort;
+    e_FunctionType candType = e_FunctionType_ShortPass;
+    float typeTacticalBonus = 0.0f;
 
-        totalRating /= totalWeight2;
+    float shortScore = oddsShort * 0.55f + mateSit.spaceRating * 0.15f;
+    float longScore  = oddsLong * 0.55f + mateSit.forwardSpaceRating * 0.22f + (isThroughBallWindow ? 0.18f : 0.0f);
+    float highScore  = oddsHigh * 0.52f + mateSit.spaceRating * 0.16f + (isWideCrossWindow ? 0.26f : 0.0f) + (isSwitchPlayWindow ? 0.22f : 0.0f);
 
-        if (totalRating > bestTotalRating && totalRating > passThreshold && mateRating.passRating > passMinimum) {
-          bestTotalRating = totalRating;
-          bestMateRating = mateRating;
-          bestMateSit = mateSit;
-        }
-      }
+    if (longScore > shortScore && longScore >= highScore && oddsLong > minSafePassOdds) {
+      candOdds = oddsLong;
+      candType = e_FunctionType_LongPass;
+      typeTacticalBonus = isThroughBallWindow ? 0.14f : 0.04f;
+    } else if (highScore > shortScore && oddsHigh > minSafePassOdds * 0.85f) {
+      candOdds = oddsHigh;
+      candType = e_FunctionType_HighPass;
+      typeTacticalBonus = (isWideCrossWindow ? 0.18f : 0.0f) + (isSwitchPlayWindow ? 0.14f : 0.0f);
+    } else {
+      candOdds = oddsShort;
+      candType = e_FunctionType_ShortPass;
+    }
 
-    } // !self
-  }
+    if (candOdds < minSafePassOdds) continue;
 
-  // panic
-  float mindSet = AI_GetMindSet(CastPlayer()->GetDynamicFormationEntry().role);
-  if (mindSet < 0.25f) {
-    float panicProneness = 1.0f - mindSet * 2.0f;
-    float goalCloseness = 1.0f - NormalizedClamp((CastPlayer()->GetPosition() - Vector3(pitchHalfW * CastPlayer()->GetTeam()->GetSide(), 0, 0)).GetLength(), 2.0f, 16.0f);//8.0f, 32.0f);
-    if (CastPlayer()->GetDynamicFormationEntry().role != e_PlayerRole_GK) {
-      if ((bestMateRating.player == 0 || bestMateRating.passRating < panicProneness * goalCloseness) && possessionAmount < 0.9f + panicProneness * goalCloseness * 0.8f) {
-        _AddPanicPass(commandQueue);
-        if (Verbose()) printf("panic! %f, %f, %f\n", possessionAmount, panicProneness, goalCloseness);
-      }
-    } else { // keeper
-      if (possessionAmount < 3.0f) {
-        _AddPanicPass(commandQueue);
-      }
+    // Ideal passing distance curve (10m..26m is crispest)
+    float distQuality = 1.0f - fabs(passDist - 17.0f) / 48.0f;
+    distQuality = clamp(distQuality, 0.55f, 1.0f);
+
+    float mateUtility = mateXT * 0.78f +
+                        mateSit.spaceRating * 0.18f +
+                        mateSit.forwardSpaceRating * 0.16f +
+                        candOdds * (0.34f + 0.10f * (1.0f - mindSet)) * distQuality +
+                        typeTacticalBonus -
+                        oneTouchIsHard;
+
+    // Discourage pointless sideways/backward passes when carrier already has open space ahead
+    if (mateXT < myXT - 0.03f && underPressure < 0.35f) {
+      mateUtility -= 0.14f;
+    }
+
+    PassCandidateContext passCtx;
+    passCtx.carrier = CastPlayer();
+    passCtx.target = mate;
+    passCtx.passType = candType;
+    passCtx.passDist = passDist;
+    passCtx.passOdds = candOdds;
+    passCtx.underPressure = underPressure;
+    passCtx.isThroughBall = isThroughBallWindow;
+    passCtx.isSwitchPlay = isSwitchPlayWindow;
+    passCtx.isWideCross = isWideCrossWindow;
+    mateUtility = AIAdaptiveRegistry::Instance().AdaptPassCandidateUtility(passCtx, disposition, mateUtility);
+
+    if (mateUtility > bestPassUtility) {
+      bestPassUtility = mateUtility;
+      bestPassTarget = mate;
+      bestPassType = candType;
+      bestPassOdds = candOdds;
     }
   }
 
-  if (bestMateRating.player != 0) {
-    _AddPass(commandQueue, bestMateRating.player, bestMateRating.passType);
-  }
+  // 3. Evaluate Shot Utility Directly via MentalImage (360 Omnidirectional Perception, No Vision Cone)
+  float distToGoal = (oppGoalCenter - myPos).GetLength();
+  bool shouldShoot = false;
+  bool is1v1KeeperSituation = false;
+  float bestShotUtility = -1.0f;
+  float bestShotY = 0.0f;
 
-  // shoot?
-  float goalDist = NormalizedClamp((Vector3(pitchHalfW * -team->GetSide(), 0, 0) - player->GetPosition()).GetLength(), 0.0f, 32.0f);
-  float idealShotPosFactor = 1.0f - NormalizedClamp((Vector3((pitchHalfW - 7.0f) * -team->GetSide(), 0, 0) - player->GetPosition()).GetLength(), 0.0f, 16.0f);
-  idealShotPosFactor = curve(idealShotPosFactor, 1.0f);
-  if (idealShotPosFactor > 0.1f) {
-    float odds1 = _GetPassingOdds(Vector3((pitchHalfW + 1.0f) * -team->GetSide(), -3.6f, 0), e_FunctionType_Shot, opponentPlayerImages, 3.0f);
-    float odds2 = _GetPassingOdds(Vector3((pitchHalfW + 1.0f) * -team->GetSide(),  0.0f, 0), e_FunctionType_Shot, opponentPlayerImages, 3.0f);
-    float odds3 = _GetPassingOdds(Vector3((pitchHalfW + 1.0f) * -team->GetSide(),  3.6f, 0), e_FunctionType_Shot, opponentPlayerImages, 3.0f);
-    float odds = odds2; float y = 0.0f;
-    if (odds1 > odds) { odds = odds1; y = -3.5f; }
-    if (odds3 > odds) { odds = odds3; y =  3.5f; }
+  if (distToGoal < 29.0f && myPos.coords[0] * attSign > pitchHalfW * 0.32f &&
+      CastPlayer()->GetFormationEntry().role != e_PlayerRole_GK) {
+    Vector3 toGoalCenter = (oppGoalCenter - myPos).GetNormalized(Vector3(attSign, 0, 0));
+    float angleCos = clamp(toGoalCenter.coords[0] * attSign, 0.05f, 1.0f);
+    float shotAcc = CastPlayer()->GetStat("technical_shot");
+    float shotPower = CastPlayer()->GetStat("physical_shotpower");
+    float shotSkill = 0.55f * shotAcc + 0.45f * shotPower;
 
-    odds = std::pow(odds, 0.5f);
-    if (Verbose()) printf("ODDS: %f\n", odds);
+    const float targetCols[5] = {-3.30f, -1.80f, 0.0f, 1.80f, 3.30f};
+    float bestWindowQuality = 0.0f;
+    float bestCorridorClearance = 0.0f;
 
-    if (odds + random(0.0f, 0.5f) > 0.5f) {
-      PlayerCommand command;
-      command.desiredFunctionType = e_FunctionType_Shot;
-      command.useDesiredMovement = false;
-      command.useDesiredLookAt = false;
-      command.desiredVelocityFloat = rawInputVelocityFloat; // this is so we can use sprint/dribble buttons as shot modifiers
-      command.touchInfo.desiredDirection = (Vector3((pitchHalfW + 1.0f) * -team->GetSide(), y + random(-1.0f + player->GetStat("technical_shot"), 1.0f - player->GetStat("technical_shot")), 0) - (CastPlayer()->GetPosition() + CastPlayer()->GetMovement() * 0.2f)).GetNormalized(Vector3(-team->GetSide(), 0, 0));
-      command.touchInfo.desiredDirection = (command.touchInfo.desiredDirection * 0.7f + -CastPlayer()->GetDirectionVec() * (CastPlayer()->GetFloatVelocity() / sprintVelocity) * 0.3f).GetNormalized();
-      command.touchInfo.autoDirectionBias = 1.0f;
-      command.touchInfo.desiredPower = random(0.7f * (0.6f + goalDist * 0.4f), 1.0f * (0.6f + goalDist * 0.4f));
-      commandQueue.push_back(command);
+    for (int c = 0; c < 5; c++) {
+      float colY = targetCols[c];
+      Vector3 goalPt(pitchHalfW * attSign, colY, 0.0f);
+      Vector3 ray = (goalPt - myPos);
+      float rayLen = std::max(1.0f, ray.Get2D().GetLength());
+      Vector3 rayDir = ray.Get2D().GetNormalized(Vector3(attSign, 0, 0));
+
+      // Outfield blocker clearance from MentalImage
+      float corridorClear = 1.0f;
+      for (size_t o = 0; o < outfieldOpponentImages.size(); o++) {
+        Vector3 oppPred = outfieldOpponentImages[o].position.Get2D() + outfieldOpponentImages[o].movement.Get2D() * 0.16f;
+        Vector3 rel = oppPred - myPos.Get2D();
+        float along = rel.GetDotProduct(rayDir);
+        if (along <= 0.35f || along >= rayLen - 0.4f) continue;
+        Vector3 closestPt = myPos.Get2D() + rayDir * along;
+        float perp = (oppPred - closestPt).GetLength();
+        float blockRadius = 0.85f + NormalizedClamp(along, 1.5f, 18.0f) * 0.55f;
+        if (perp < blockRadius) {
+          float clearHere = clamp(perp / blockRadius, 0.0f, 1.0f);
+          corridorClear = std::min(corridorClear, clearHere * clearHere);
+        }
+      }
+
+      // Goalkeeper angle coverage from MentalImage
+      float gkOpenness = 1.0f;
+      if (foundOppKeeper) {
+        Vector3 relGK = keeperPos.Get2D() - myPos.Get2D();
+        float gkAlong = clamp(relGK.GetDotProduct(rayDir), 0.5f, rayLen);
+        Vector3 rayAtGK = myPos.Get2D() + rayDir * gkAlong;
+        float gkPerp = (keeperPos.Get2D() - rayAtGK).GetLength();
+        float ballFlight_s = gkAlong / std::max(18.0f, 22.0f + shotPower * 9.0f);
+        float gkReach = 0.95f + ballFlight_s * 3.1f;
+        gkOpenness = clamp((gkPerp - 0.35f) / std::max(0.65f, gkReach), 0.10f, 1.0f);
+      }
+
+      float cornerBonus = (fabs(colY) > 2.2f) ? 0.06f : 0.0f;
+      float colQuality = corridorClear * (0.35f + 0.65f * gkOpenness) + cornerBonus;
+      if (colQuality > bestWindowQuality) {
+        bestWindowQuality = colQuality;
+        bestCorridorClearance = corridorClear;
+        bestShotY = colY;
+      }
+    }
+
+    is1v1KeeperSituation = (distToGoal < 18.0f && angleCos > 0.42f &&
+                            outfieldAheadInLaneCount == 0 &&
+                            bestCorridorClearance > 0.55f);
+
+    float rangeFactor = 1.0f - NormalizedClamp(distToGoal, 7.0f, 27.5f);
+    float clinical1v1Bonus = 0.0f;
+    if (is1v1KeeperSituation) {
+      clinical1v1Bonus = 0.40f + 0.14f * shotAcc +
+                         (1.0f - NormalizedClamp(distToKeeperNow, 2.8f, 11.0f)) * 0.16f;
+    } else if (distToGoal < 15.5f && angleCos > 0.48f && bestCorridorClearance > 0.50f) {
+      clinical1v1Bonus = 0.28f + 0.10f * shotAcc;
+    }
+
+    bestShotUtility = bestWindowQuality * (0.58f + 0.48f * rangeFactor) * (0.45f + 0.55f * angleCos) +
+                      shotSkill * 0.18f +
+                      clinical1v1Bonus;
+
+    float minShotThreshold = 0.52f - shotSkill * 0.08f;
+    bool passIsBoxBreakaway = (bestPassTarget != 0) &&
+                              (_mentalImage->GetPlayerImage(bestPassTarget->GetID()).position.coords[0] * attSign > pitchHalfW - 15.5f);
+    float effectivePassComp = (is1v1KeeperSituation && !passIsBoxBreakaway)
+                                  ? (bestPassUtility * 0.80f)
+                                  : bestPassUtility;
+    float passMargin = is1v1KeeperSituation ? 0.12f : 0.05f;
+    float dribbleMargin = is1v1KeeperSituation ? -0.10f : 0.01f;
+
+    if (bestShotUtility > minShotThreshold &&
+        bestShotUtility > dribbleUtility + dribbleMargin &&
+        bestShotUtility > effectivePassComp - passMargin) {
+      shouldShoot = true;
     }
   }
 
-
-  e_Velocity enumVelocity = e_Velocity_Idle;
+  // 4. Arbitrate On-Ball Intent (Shot vs Pass vs 1v1 Take-On vs Hold/Shield vs Open Carry)
   AI_GetBestDribbleMovement(match, player->GetID(), _mentalImage, rawInputDirection, rawInputVelocityFloat, team->GetTeamData()->GetTactics());
+
+  OnBallArbitrationInput arbIn;
+  arbIn.match = match;
+  arbIn.carrier = CastPlayer();
+  arbIn.mentalImage = _mentalImage;
+  arbIn.opponentImages = &opponentPlayerImages;
+  arbIn.baselineDribbleUtility = dribbleUtility;
+  arbIn.bestPassUtility = bestPassUtility;
+  arbIn.bestPassOdds = bestPassOdds;
+  arbIn.bestPassTarget = bestPassTarget;
+  arbIn.bestPassType = bestPassType;
+  arbIn.baselineShouldShoot = shouldShoot;
+  arbIn.is1v1Keeper = is1v1KeeperSituation;
+  arbIn.bestShotUtility = bestShotUtility;
+  arbIn.bestShotTargetY = bestShotY;
+  arbIn.underPressure = underPressure;
+  arbIn.baselineDribbleDir = rawInputDirection;
+  arbIn.baselineDribbleVel = rawInputVelocityFloat;
+
+  OnBallArbitrationResult arbOut = AIAdaptiveRegistry::Instance().ArbitrateOnBallIntent(arbIn, disposition, defMomentum);
+  rawInputDirection = arbOut.adaptedDribbleDir;
+  rawInputVelocityFloat = arbOut.adaptedDribbleVel;
+  pendingTakeOnKnockOn = arbOut.requestKnockOn;
+
+  // 5. Defensive Panic / Clearance Under Extreme Box Danger (moderated by player composure)
+  if (!arbOut.executeShot && !arbOut.suppressPanicClearance && mindSet < 0.25f) {
+    float panicProneness = 1.0f - mindSet * 2.0f;
+    float ownGoalCloseness = 1.0f - NormalizedClamp((myPos - Vector3(pitchHalfW * side, 0, 0)).GetLength(), 2.0f, 16.0f);
+    if (CastPlayer()->GetDynamicFormationEntry().role != e_PlayerRole_GK) {
+      if ((bestPassTarget == 0 || bestPassOdds < panicProneness * ownGoalCloseness) &&
+          possessionAmount < 0.88f + panicProneness * ownGoalCloseness * 0.75f &&
+          underPressure > 0.55f) {
+        _AddPanicPass(commandQueue);
+      }
+    } else if (possessionAmount < 2.8f && underPressure > 0.45f) {
+      _AddPanicPass(commandQueue);
+    }
+  }
+
+  // 6. Commit Single Coherent Action (Shot OR Best Pass OR Adapted Dribble/Take-On/Shield)
+  if (arbOut.executeShot) {
+    PlayerCommand command;
+    command.desiredFunctionType = e_FunctionType_Shot;
+    command.useDesiredMovement = false;
+    command.useDesiredLookAt = false;
+    // Match current stride velocity on breakaways so shot animation triggers immediately without 2-touch deceleration!
+    float curVel = CastPlayer()->GetFloatVelocity();
+    command.desiredVelocityFloat = (distToGoal < 15.5f && curVel < walkVelocity + 1.0f)
+                                       ? dribbleVelocity
+                                       : ClampVelocity(std::max(curVel, dribbleVelocity));
+    float jitterScale = is1v1KeeperSituation ? 0.46f : 0.68f;
+    float aimJitter = (1.0f - CastPlayer()->GetStat("technical_shot")) * jitterScale;
+    Vector3 aimPoint((pitchHalfW + 1.0f) * attSign, bestShotY + random(-aimJitter, aimJitter), 0.0f);
+    Vector3 origin = myPos + CastPlayer()->GetMovement() * 0.18f;
+    command.touchInfo.desiredDirection = (aimPoint - origin).GetNormalized(Vector3(attSign, 0, 0));
+    command.touchInfo.desiredDirection = (command.touchInfo.desiredDirection * 0.88f + -CastPlayer()->GetDirectionVec() * (CastPlayer()->GetFloatVelocity() / sprintVelocity) * 0.12f).GetNormalized(Vector3(attSign, 0, 0));
+    command.touchInfo.autoDirectionBias = 1.0f;
+    if (distToGoal < 14.5f) {
+      // Composed low/placed finish in 1v1 so shots don't sky over the bar
+      command.touchInfo.desiredPower = clamp(random(0.50f, 0.70f), 0.46f, 0.74f);
+    } else {
+      float normDist = NormalizedClamp(distToGoal, 14.5f, 36.0f);
+      float pwrStat = CastPlayer()->GetStat("physical_shotpower");
+      command.touchInfo.desiredPower = clamp(random(0.72f + normDist * 0.18f, 0.84f + normDist * 0.13f + pwrStat * 0.04f), 0.68f, 0.98f);
+    }
+    commandQueue.push_back(command);
+  } else if (arbOut.executePass && bestPassTarget != 0) {
+    _AddPass(commandQueue, bestPassTarget, bestPassType);
+  }
 }
 
 void ElizaController::_AddPass(std::vector<PlayerCommand> &commandQueue, Player *target, e_FunctionType passType) {
@@ -1068,7 +1401,11 @@ float ElizaController::_GetPassingOdds(const Vector3 &target, e_FunctionType pas
     }
   }
 
-  if (passType == e_FunctionType_HighPass) danger += 0.4f; // just don't prefer high passing when low passing is applicable as well
+  if (passType == e_FunctionType_HighPass) {
+    float passLen = (target - origin).GetLength();
+    // Less penalty on genuine long switches of play or crosses (> 24m)
+    danger += (passLen > 24.0f) ? 0.18f : 0.36f;
+  }
 
   danger = NormalizedClamp(danger, 0.0f, secondScale); // 1 super dangerous dude is basically the same as 100% danger
   float odds = 1.0f - danger;
@@ -1078,13 +1415,17 @@ float ElizaController::_GetPassingOdds(const Vector3 &target, e_FunctionType pas
 
 void ElizaController::_AddCelebration(std::vector<PlayerCommand> &commandQueue) {
 
+  unsigned long elapsed_ms = match->GetActualTime_ms() - match->GetReferee()->GetBuffer().stopTime;
+
   signed int xSide = (match->GetBall()->Predict(0).Get2D().coords[0] > 0) ? 1 : -1;
   signed int ySide = team->GetSide();
-  if (team->GetLastTouchPlayer()) ySide = (team->GetLastTouchPlayer()->GetPosition().coords[1] > 0) ? 1 : -1;
-  Vector3 celebrationPosition = Vector3(pitchHalfW * xSide, pitchHalfH * ySide, 0);
+  if (team->GetLastTouchPlayer()) ySide = (team->GetLastTouchPlayer()->GetPosition().coords[1] >= 0) ? 1 : -1;
+  Vector3 celebrationPosition = Vector3((pitchHalfW - 4.5f) * xSide, (pitchHalfH - 4.0f) * ySide, 0);
 
-  Vector3 desiredDirection = (celebrationPosition - player->GetPosition()).GetNormalized();
-  float desiredVelocityFloat = ClampVelocity((celebrationPosition - player->GetPosition()).GetLength() / 4.0f);
+  Vector3 toTarget = celebrationPosition - player->GetPosition();
+  float distToTarget = toTarget.GetLength();
+  Vector3 desiredDirection = toTarget.GetNormalized(player->GetDirectionVec());
+  float desiredVelocityFloat = ClampVelocity(distToTarget / 3.5f);
   Vector3 desiredLookAt = player->GetPosition() + player->GetDirectionVec() * 1000;
 
   int celebrationType = 1;
@@ -1099,26 +1440,35 @@ void ElizaController::_AddCelebration(std::vector<PlayerCommand> &commandQueue) 
   if (celebrationType == 1) {
     if (team->GetLastTouchPlayer() == player) {
       madeGoal = 2;
-      desiredVelocityFloat = sprintVelocity;
+      if (distToTarget > 5.5f && elapsed_ms < 5800) {
+        desiredVelocityFloat = sprintVelocity;
+      } else if (distToTarget > 2.5f && elapsed_ms < 8200) {
+        desiredVelocityFloat = dribbleVelocity;
+      } else {
+        desiredVelocityFloat = walkVelocity;
+      }
     } else {
       madeGoal = 1;
-      if (team->GetLastTouchPlayer() != 0) {
-        if ((team->GetLastTouchPlayer()->GetPosition() - player->GetPosition()).GetLength() < 20) {
+      if (team->GetLastTouchPlayer() != 0 && CastPlayer()->GetFormationEntry().role != e_PlayerRole_GK) {
+        float distToScorer = (team->GetLastTouchPlayer()->GetPosition() - player->GetPosition()).GetLength();
+        if (distToScorer < 36.0f) {
           celebrationPosition = team->GetLastTouchPlayer()->GetPosition();
-          desiredDirection = ((team->GetLastTouchPlayer()->GetPosition() * 0.5 + celebrationPosition * 0.5) - player->GetPosition()).GetNormalized();
-          desiredVelocityFloat = ClampVelocity((team->GetLastTouchPlayer()->GetPosition() - player->GetPosition()).GetLength() / 2.0);
+          desiredDirection = ((team->GetLastTouchPlayer()->GetPosition() * 0.65f + celebrationPosition * 0.35f) - player->GetPosition()).GetNormalized(player->GetDirectionVec());
+          desiredVelocityFloat = (distToScorer > 3.2f) ? ClampVelocity(distToScorer / 2.2f) : walkVelocity;
         } else {
           desiredVelocityFloat = idleVelocity;
         }
-        desiredLookAt = player->GetPosition() + team->GetLastTouchPlayer()->GetDirectionVec() * 100;
+        desiredLookAt = team->GetLastTouchPlayer()->GetPosition();
+      } else {
+        desiredVelocityFloat = idleVelocity;
       }
     }
   }
 
 
-  // celebration
+  // Extended post-goal celebration specials (1.4s .. 9.2s)
 
-  if (match->GetActualTime_ms() - match->GetReferee()->GetBuffer().stopTime > 2000 && match->GetActualTime_ms() - match->GetReferee()->GetBuffer().stopTime < 4000) {
+  if (elapsed_ms > 1400 && elapsed_ms < 9200) {
     PlayerCommand command;
     command.desiredFunctionType = e_FunctionType_Special;
     command.useSpecialVar1 = true;

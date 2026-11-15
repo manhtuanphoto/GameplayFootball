@@ -258,40 +258,36 @@ namespace blunted {
   // 2 == dest already exists
   // 3 == could not create dest
   // 4 == could not copy file (disk full?)
-  int CopyDirectory(boost::filesystem::path const &source, boost::filesystem::path const &destination) {
-    boost::system::error_code error;
+  int CopyDirectory(std::filesystem::path const &source, std::filesystem::path const &destination) {
+    std::error_code error;
+    namespace fs = std::filesystem;
 
-    namespace fs = boost::filesystem;
-
-    if (!fs::exists(source) || !fs::is_directory(source, error)) return 1; // source dir not found
-    if (fs::exists(destination)) return 2; // destination exists
+    if (!fs::exists(source, error) || !fs::is_directory(source, error)) return 1; // source dir not found
+    if (fs::exists(destination, error)) return 2; // destination exists
     if (!fs::create_directory(destination, error)) return 3; // could not create dir
 
-    for (fs::directory_iterator file(source); file != fs::directory_iterator(); ++file) {
-      fs::path current(file->path());
+    for (const auto &entry : fs::directory_iterator(source, error)) {
+      fs::path current = entry.path();
       if (fs::is_directory(current, error)) {
-        // found directory: recursion
         int retCode = CopyDirectory(current, destination / current.filename());
         if (retCode != 0) return retCode;
       } else {
-        // found file: copy
-        fs::copy_file(current, destination / current.filename(), error);
+        fs::copy_file(current, destination / current.filename(), fs::copy_options::none, error);
         if (error) return 4;
       }
     }
     return 0;
   }
 
-  bool CreateDirectory(boost::filesystem::path const &dir) {
-    namespace fs = boost::filesystem;
-    return fs::create_directory(dir);
+  bool CreateDirectory(std::filesystem::path const &dir) {
+    std::error_code error;
+    return std::filesystem::create_directories(dir, error);
   }
 
-  bool CopyFile(boost::filesystem::path const &source, boost::filesystem::path const &destinationDir) {
-    boost::system::error_code error;
-    namespace fs = boost::filesystem;
-    fs::copy_file(source, destinationDir / source.filename(), error);
-    if (error.value() != 0) return false; else return true;
+  bool CopyFile(std::filesystem::path const &source, std::filesystem::path const &destinationDir) {
+    std::error_code error;
+    std::filesystem::copy_file(source, destinationDir / source.filename(), std::filesystem::copy_options::overwrite_existing, error);
+    return !error;
   }
 
   // http://stackoverflow.com/questions/2535284/how-can-i-hash-a-string-to-an-int-using-c
@@ -308,8 +304,4 @@ namespace blunted {
 
   }
 
-}
-
-namespace boost { // filesystem functions need this for some reason
-  void assertion_failed_msg(char const *expr, char const *msg, char const *function, char const *file, long line) {}
 }

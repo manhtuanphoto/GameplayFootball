@@ -26,19 +26,23 @@ namespace blunted {
       GraphicsGeometry(GraphicsScene *graphicsScene);
       virtual ~GraphicsGeometry();
 
-      virtual boost::intrusive_ptr<Interpreter> GetInterpreter(e_ObjectType objectType);
+      virtual blunted::intrusive_ptr<Interpreter> GetInterpreter(e_ObjectType objectType);
 
       virtual void SetPosition(const Vector3 &newPosition);
       Vector3 GetPosition() const;
       virtual void SetRotation(const Quaternion &newRotation);
       Quaternion GetRotation() const;
+      void SetBoneMatrices(const std::vector<Matrix4> &matrices);
+      const std::vector<Matrix4> &GetBoneMatrices() const { return boneMatrices; }
 
-      std::list<VertexBufferIndex> vertexBufferIndices;
-      boost::intrusive_ptr < Resource<VertexBuffer> > vertexBuffer;
+      std::shared_ptr<std::vector<VertexBufferIndex>> vertexBufferIndices;
+      std::shared_ptr<std::array<float, 256>> packedBoneMatrices;
+      blunted::intrusive_ptr < Resource<VertexBuffer> > vertexBuffer;
 
     protected:
       Vector3 position;
       Quaternion rotation;
+      std::vector<Matrix4> boneMatrices;
 
   };
 
@@ -48,11 +52,12 @@ namespace blunted {
       GraphicsGeometry_GeometryInterpreter(GraphicsGeometry *caller);
 
       virtual e_SystemType GetSystemType() const { return e_SystemType_Graphics; }
-      virtual void OnLoad(boost::intrusive_ptr<Geometry> geometry);
-      virtual void OnUpdateGeometry(boost::intrusive_ptr<Geometry> geometry, bool updateMaterials);
+      virtual void OnLoad(blunted::intrusive_ptr<Geometry> geometry);
+      virtual void OnUpdateGeometry(blunted::intrusive_ptr<Geometry> geometry, bool updateMaterials);
       virtual void OnUnload();
       inline virtual void OnMove(const Vector3 &position);
       inline virtual void OnRotate(const Quaternion &rotation);
+      virtual void OnSetBoneMatrices(const std::vector<Matrix4> &matrices);
       virtual void OnSynchronize();
 
       virtual void GetVertexBufferQueue(std::deque<VertexBufferQueueEntry> &queue);

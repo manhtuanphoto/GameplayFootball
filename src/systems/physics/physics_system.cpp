@@ -30,7 +30,7 @@ namespace blunted {
 
   void PhysicsSystem::Exit() {
     // shutdown system task
-    boost::intrusive_ptr<Message_Shutdown> shutdown(new Message_Shutdown());
+    blunted::intrusive_ptr<Message_Shutdown> shutdown(new Message_Shutdown());
     task->messageQueue.PushMessage(shutdown);
     shutdown->Wait();
 
@@ -46,7 +46,7 @@ namespace blunted {
     return systemType;
   }
 
-  ISystemScene *PhysicsSystem::CreateSystemScene(boost::shared_ptr<IScene> scene) {
+  ISystemScene *PhysicsSystem::CreateSystemScene(std::shared_ptr<IScene> scene) {
     if (scene->GetSceneType() == e_SceneType_Scene3D) {
       PhysicsScene *physicsScene = new PhysicsScene(this);
       scene->Attach(physicsScene->GetInterpreter(e_SceneType_Scene3D));

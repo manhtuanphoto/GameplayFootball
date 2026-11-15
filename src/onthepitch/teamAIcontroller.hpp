@@ -61,6 +61,8 @@ class TeamAIController {
 
     unsigned long GetEndApplyTeamPressure_ms() { return endApplyTeamPressure_ms; }
     Player *GetTeamPressurePlayer() { return teamPressurePlayer; }
+    Player *GetSecondTeamPressurePlayer() { return secondTeamPressurePlayer; }
+    int GetSecondTeamPressureTargetID() const { return secondTeamPressureTargetID; }
 
     Player *GetForwardSupportPlayer() { return forwardSupportPlayer; }
 
@@ -102,6 +104,8 @@ class TeamAIController {
     Player *attackingRunPlayer;
     unsigned long endApplyTeamPressure_ms;
     Player *teamPressurePlayer;
+    Player *secondTeamPressurePlayer;
+    int secondTeamPressureTargetID;
     unsigned long endApplyKeeperRush_ms;
 
     Player *forwardSupportPlayer; // sort of like the attacking run player, but more for a forward offset for a player close to the action, to support the player in possession

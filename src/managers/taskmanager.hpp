@@ -36,15 +36,15 @@ namespace blunted {
       void GetFullWorkerThreadState(int workerThreadIndex, e_ThreadState &state, std::string &commandName);
 
       /// insert a message in the workQueue
-      void EnqueueWork(boost::intrusive_ptr<Command> message, bool notify = true); // ATOMIC
+      void EnqueueWork(blunted::intrusive_ptr<Command> message, bool notify = true); // ATOMIC
 
       void NotifyWorkers(e_NotificationSubject notificationSubject = e_NotificationSubject_All);
 
       /// wait on a new workQueue item
-      boost::intrusive_ptr<Command> WaitForWork(); // ATOMIC
+      blunted::intrusive_ptr<Command> WaitForWork(); // ATOMIC
 
     protected:
-      MessageQueue < boost::intrusive_ptr<Command> > workQueue;
+      MessageQueue < blunted::intrusive_ptr<Command> > workQueue;
       std::vector<WorkerThread*> pool;
 
 

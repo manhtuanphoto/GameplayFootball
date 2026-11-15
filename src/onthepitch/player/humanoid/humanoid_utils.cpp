@@ -291,7 +291,7 @@ Vector3 GetBallControlVector(Ball *ball, Player *player, const Vector3 &nextStar
   timeToGo += physicsDelayTime * physicsBias + desiredDelayTime * (1.0f - physicsBias);
   timeToGo += defaultTouchOffset_ms * 0.001f;//0.08f; // time into next anim where we want to hit the ball
 
-  float divisor = timeToGo * (0.38f + 0.02f * player->GetStat("technical_dribble")); // higher == closer
+  float divisor = timeToGo * (0.39f + 0.03f * player->GetStat("technical_dribble")); // higher == closer touch at feet
   divisor *= 1.1f;
 
   // to get the ball to the planned position in timeToGo seconds, we need to do some pow() magic, since the ball also slows down faster at higher ball velos
@@ -302,11 +302,11 @@ Vector3 GetBallControlVector(Ball *ball, Player *player, const Vector3 &nextStar
   // SetGreenDebugPilon(nextStartPos + FFO);
 
   //if (player->GetDebug()) printf("power: %f\n", power);
-  float height = clamp(0.1f + 1.5f * std::pow(power / 10.0f, 1.6f), 0.0f,
-                       1.5f);  // power ~= 0 to 10
+  float height = clamp(0.08f + 1.35f * std::pow(power / 10.0f, 1.65f), 0.0f,
+                       1.4f);  // power ~= 0 to 10
 
   //if (player->GetDebug()) printf("tech ballctrl: %f\n", player->GetStat("technical_ballcontrol"));
-  float powerMultiplier = 1.2f - (player->GetStat("technical_ballcontrol") * 0.03f); // 1.24 .. * 0.1
+  float powerMultiplier = 1.18f - (player->GetStat("technical_ballcontrol") * 0.04f); // closer control for high ballcontrol
   float veloBias = NormalizedClamp(velocity, walkVelocity, sprintVelocity - 0.8f); // this multiplier only applies to high velocities
   powerMultiplier = 1.0f * (1.0f - veloBias) + powerMultiplier * veloBias;
 
@@ -452,9 +452,13 @@ Vector3 GetShotVector(Match *match, Player *player, const Vector3 &nextStartPos,
   if (Verbose()) printf("(ease) RESULTING difficultyFactor: %f\n", difficultyFactor);
 
 
-  // best case result
+  // best case result (distance-adapted trajectory + driven dip vs finesse)
 
-  float desiredHeight = 0.05f;
+  float shotGoalDist = (Vector3(-player->GetTeam()->GetSide() * pitchHalfW, 0, 0) - player->GetPosition()).GetLength();
+  float desiredPowerNorm = currentAnim->originatingCommand.touchInfo.desiredPower;
+  float drivenBias = NormalizedClamp(desiredPowerNorm, 0.66f, 0.94f) * (0.4f + 0.6f * expressionModifierFactor);
+
+  float desiredHeight = clamp(0.042f + NormalizedClamp(shotGoalDist, 8.0f, 36.0f) * 0.082f + drivenBias * 0.020f, 0.04f, 0.145f);
   Vector3 desiredShot = (currentAnim->originatingCommand.touchInfo.desiredDirection.Get2D() + Vector3(0, 0, desiredHeight)).GetNormalized() * power;
   if (Verbose()) {
     desiredShot.Print();
@@ -471,13 +475,13 @@ Vector3 GetShotVector(Match *match, Player *player, const Vector3 &nextStartPos,
   worstCaseDirection = (touchDirection * laggyDirectionBias + worstCaseDirection * (1.0f - laggyDirectionBias)).GetNormalized(0);
 
   // random dir
-  worstCaseDirection = worstCaseDirection + (Vector3(random(-1, 1), random(-1, 1), random(-1, 1)) * 0.5f * difficultyFactor);
+  worstCaseDirection = worstCaseDirection + (Vector3(random(-1, 1), random(-1, 1), random(-1, 1)) * 0.45f * difficultyFactor);
   worstCaseDirection.Normalize();
 
-  float worstCaseHeight = curve(std::pow(difficultyFactor, 0.7f), 0.7f) * 0.7f;
+  float worstCaseHeight = curve(std::pow(difficultyFactor, 0.7f), 0.7f) * 0.62f;
 
   float worstCasePower =
-      power * (1.0f - std::pow(difficultyFactor, 0.7f) * 0.5f);
+      power * (1.0f - std::pow(difficultyFactor, 0.7f) * 0.48f);
 
   Vector3 worstCaseShot = (worstCaseDirection + Vector3(0, 0, worstCaseHeight)).GetNormalized() * worstCasePower;
   if (Verbose()) {
@@ -490,29 +494,29 @@ Vector3 GetShotVector(Match *match, Player *player, const Vector3 &nextStartPos,
 
   float worstCaseFactor = random(0.0f, 1.0f);
   worstCaseFactor =
-      std::pow(worstCaseFactor, player->GetStat("technical_shot") * 0.7f);
+      std::pow(worstCaseFactor, 0.35f + player->GetStat("technical_shot") * 0.75f);
 
   Vector3 shot = desiredShot * (1.0f - worstCaseFactor) +
                  worstCaseShot * worstCaseFactor;
 
 
-  // add a little curve
+  // add topspin dip on driven strikes or backspin/curl on finesse shots
 
-  float randomCurveFactor = 0.3f + worstCaseFactor * 0.7f;
-  float plannedCurveFactor = 0.7f; // todo: use curve as actual planned thing, not random :p
+  float randomCurveFactor = 0.25f + worstCaseFactor * 0.65f;
+  float plannedCurveFactor = 0.55f * (1.0f - player->GetStat("technical_shot") * 0.5f);
 
-  // forward/backward 'curve'
-  xRot = -currentAnim->originatingCommand.touchInfo.desiredDirection.coords[1] * 20.0f + (random(-20, 20) * randomCurveFactor);
-  yRot = -currentAnim->originatingCommand.touchInfo.desiredDirection.coords[0] * 20.0f + (random(-20, 20) * randomCurveFactor);
+  // Negative = backspin float; Positive = topspin dip under the crossbar
+  float forwardSpinRate = (-16.0f * (1.0f - drivenBias)) + (26.0f * drivenBias * (0.5f + 0.5f * player->GetStat("technical_shot")));
+  xRot = currentAnim->originatingCommand.touchInfo.desiredDirection.coords[1] * forwardSpinRate + (random(-16, 16) * randomCurveFactor);
+  yRot = currentAnim->originatingCommand.touchInfo.desiredDirection.coords[0] * forwardSpinRate + (random(-16, 16) * randomCurveFactor);
 
-  // lateral curve
+  // lateral curve (finesse curl enhanced by technical_shot)
   radian bodyTouchAngle = spatialState.bodyDirectionVec.GetAngle2D(shot) / pi;
   if (fabs(bodyTouchAngle) > 0.5f) bodyTouchAngle = (1.0f - fabs(bodyTouchAngle)) * signSide(bodyTouchAngle);
   bodyTouchAngle *= 2.0f;
-  //printf("bodyTouchAngle: %f\n", bodyTouchAngle);
-  radian amount = bodyTouchAngle * 0.25f;
-  shot.Rotate2D(amount * (0.4f + 0.6f * NormalizedClamp(shot.GetLength(), 0.0f, 70.0f)));
-  zRot = amount * -420 + (random(-20, 20) * plannedCurveFactor);
+  radian amount = bodyTouchAngle * (0.23f + 0.07f * player->GetStat("technical_shot") * (1.0f - drivenBias * 0.5f));
+  shot.Rotate2D(amount * (0.4f + 0.6f * NormalizedClamp(shot.GetLength(), 0.0f, 68.0f)));
+  zRot = amount * -435.0f + (random(-16, 16) * plannedCurveFactor);
 
   //SetRedDebugPilon(match->GetBall()->Predict(0).Get2D() + touchVec.Get2D() * 0.4f);
 

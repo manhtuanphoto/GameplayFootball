@@ -21,7 +21,7 @@
 
 namespace blunted {
 
-  Gui2Task::Gui2Task(boost::shared_ptr<Scene2D> scene2D, float aspectRatio, float margin) : scene2D(scene2D) {
+  Gui2Task::Gui2Task(std::shared_ptr<Scene2D> scene2D, float aspectRatio, float margin) : scene2D(scene2D) {
     windowManager = new Gui2WindowManager(scene2D, aspectRatio, margin);
     for (int j = 0; j < _JOYSTICK_MAX; j++) {
       for (int i = 0; i < _JOYSTICK_MAXBUTTONS; i++) {
@@ -50,8 +50,7 @@ namespace blunted {
   }
 
   void Gui2Task::ProcessPhase() {
-    windowManager->GetRoot()->SetRecursiveZPriority(0); // todo: this can probably be optimized (like, doing it every frame seems redundant?)
-    //windowManager->GetRoot()->PrintTree(0);
+    windowManager->UpdateZPriorityIfNeeded();
     ProcessEvents();
     windowManager->Process();
   }
@@ -61,44 +60,38 @@ namespace blunted {
 
   void Gui2Task::ProcessEvents() {
 
-    // todo: stop making objects every process(); this is terribly inefficient. find out if they are needed in the first place.
-
     if (!windowManager->GetFocus()) return;
     Gui2View *currentFocus = windowManager->GetFocus();
 
-    // some buttons need to be sent through a windowing event (escape, enter, directional controls)
-    // if a view accepts a keyboard/joystick event, don't send windowing event => *disabled, now uses focus check
     bool needsWindowingEvent = false;
-    WindowingEvent *wEvent = new WindowingEvent();
-
+    WindowingEvent wEvent;
 
     // keyboard events
 
-    KeyboardEvent *event = new KeyboardEvent();
+    KeyboardEvent kbEvent;
     bool needsKeyboardEvent = false;
 
     auto currentKeyState = UserEventManager::GetInstance().GetKeyboardState();
 
-    for (auto keyState : currentKeyState) {
+    for (const auto &keyState : currentKeyState) {
       auto pressedKey = keyState.first;
 
       // continuous
-      event->SetKeyContinuous(pressedKey);
-      //printf("key %i pressed\n", pressedKey);
+      kbEvent.SetKeyContinuous(pressedKey);
 
       needsKeyboardEvent = true;
 
       // only when pressed first time
       if (prevKeyState.count(pressedKey) == 0) {
-        event->SetKeyOnce(pressedKey);
+        kbEvent.SetKeyOnce(pressedKey);
 
         if (keyboard) {
           if (pressedKey == SDLK_RETURN) {
-            wEvent->SetActivate();
+            wEvent.SetActivate();
             needsWindowingEvent = true;
           }
           else if (pressedKey == SDLK_ESCAPE) {
-            wEvent->SetEscape();
+            wEvent.SetEscape();
             needsWindowingEvent = true;
           }
         }
@@ -106,32 +99,31 @@ namespace blunted {
 
       // when pressed first time, or when held for longer than some threshold
       if (prevKeyState.count(pressedKey) == 0 || UserEventManager::GetInstance().GetLastKeyPressDiff_ms(pressedKey) > 250) {
-        event->SetKeyRepeated(pressedKey);
+        kbEvent.SetKeyRepeated(pressedKey);
 
         if (keyboard) {
           if (pressedKey == SDLK_UP) {
-            wEvent->SetDirection(Vector3(0, -1, 0));
+            wEvent.SetDirection(Vector3(0, -1, 0));
             needsWindowingEvent = true;
           } else if (pressedKey == SDLK_RIGHT) {
-            wEvent->SetDirection(Vector3(1, 0, 0));
+            wEvent.SetDirection(Vector3(1, 0, 0));
             needsWindowingEvent = true;
           } else if (pressedKey == SDLK_DOWN) {
-            wEvent->SetDirection(Vector3(0, 1, 0));
+            wEvent.SetDirection(Vector3(0, 1, 0));
             needsWindowingEvent = true;
           } else if (pressedKey == SDLK_LEFT) {
-            wEvent->SetDirection(Vector3(-1, 0, 0));
+            wEvent.SetDirection(Vector3(-1, 0, 0));
             needsWindowingEvent = true;
           }
         }
       }
     }
 
-    prevKeyState = currentKeyState;
+    prevKeyState = std::move(currentKeyState);
 
     if (needsKeyboardEvent) {
-      if (windowManager->GetFocus() == currentFocus) windowManager->GetFocus()->ProcessEvent(event);
+      if (windowManager->GetFocus() == currentFocus) windowManager->GetFocus()->ProcessEvent(&kbEvent);
     }
-    delete event;
 
 
     // joystick events
@@ -162,44 +154,42 @@ namespace blunted {
 
       if (stick || buttonChanged) {
 
-        JoystickEvent *event = new JoystickEvent();
+        JoystickEvent joyEvent;
 
         for (int i = 0; i < _JOYSTICK_MAXAXES; i++) {
-          event->SetAxis(j, i, axes[i]);
+          joyEvent.SetAxis(j, i, axes[i]);
         }
 
         // needs windowing event?
         Vector3 stick1Direction = Vector3(axes[0], axes[1], 0);
         if (j == GetActiveJoystickID() && stick1Direction.GetLength() != 0) {
-          wEvent->SetDirection(stick1Direction);
+          wEvent.SetDirection(stick1Direction);
           needsWindowingEvent = true;
         }
 
         for (int i = 0; i < _JOYSTICK_MAXBUTTONS; i++) {
           bool pressed = UserEventManager::GetInstance().GetJoyButtonState(j, i);
           if (pressed && !prevButtonState[j][i]) {
-            event->SetButton(j, i);
+            joyEvent.SetButton(j, i);
             if (j == GetActiveJoystickID() && i == joyButtonActivate) {
-              wEvent->SetActivate();
+              wEvent.SetActivate();
               needsWindowingEvent = true;
             }
             if (j == GetActiveJoystickID() && i == joyButtonEscape) {
-              wEvent->SetEscape();
+              wEvent.SetEscape();
               needsWindowingEvent = true;
             }
           }
           prevButtonState[j][i] = pressed;
         }
 
-        if (windowManager->GetFocus() == currentFocus) windowManager->GetFocus()->ProcessEvent(event);
-        delete event;
+        if (windowManager->GetFocus() == currentFocus) windowManager->GetFocus()->ProcessEvent(&joyEvent);
       }
     }
 
-    if (needsWindowingEvent)
-      if (windowManager->GetFocus() == currentFocus) windowManager->GetFocus()->ProcessEvent(wEvent);
-
-    delete wEvent;
+    if (needsWindowingEvent) {
+      if (windowManager->GetFocus() == currentFocus) windowManager->GetFocus()->ProcessEvent(&wEvent);
+    }
 
   }
 

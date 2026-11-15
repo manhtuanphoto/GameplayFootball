@@ -33,11 +33,13 @@
 #include "utils/threadhud.hpp"
 
 #include "utils/orbitcamera.hpp"
+#include "utils/assetupgrader.hpp"
 
+#include "SDL2/SDL_image.h"
 #include "SDL2/SDL_ttf.h"
 
-// VK: TODO Update sqlite3
-#include "libs/sqlite3/sqlite3.h"
+#include <filesystem>
+#include <sqlite3.h>
 
 #if defined(WIN32) && defined(__MINGW32__)
 #undef main
@@ -48,23 +50,23 @@ using namespace blunted;
 GraphicsSystem *graphicsSystem;
 AudioSystem *audioSystem;
 
-boost::shared_ptr<Scene2D> scene2D;
-boost::shared_ptr<Scene3D> scene3D;
+std::shared_ptr<Scene2D> scene2D;
+std::shared_ptr<Scene3D> scene3D;
 
-boost::shared_ptr<TaskSequence> graphicsSequence;
-boost::shared_ptr<TaskSequence> gameSequence;
+std::shared_ptr<TaskSequence> graphicsSequence;
+std::shared_ptr<TaskSequence> gameSequence;
 
-boost::shared_ptr<GameTask> gameTask;
-boost::shared_ptr<MenuTask> menuTask;
+std::shared_ptr<GameTask> gameTask;
+std::shared_ptr<MenuTask> menuTask;
 
-boost::intrusive_ptr<Geometry> greenPilon;
-boost::intrusive_ptr<Geometry> bluePilon;
-boost::intrusive_ptr<Geometry> yellowPilon;
-boost::intrusive_ptr<Geometry> redPilon;
+blunted::intrusive_ptr<Geometry> greenPilon;
+blunted::intrusive_ptr<Geometry> bluePilon;
+blunted::intrusive_ptr<Geometry> yellowPilon;
+blunted::intrusive_ptr<Geometry> redPilon;
 
-boost::intrusive_ptr<Geometry> smallDebugCircle1;
-boost::intrusive_ptr<Geometry> smallDebugCircle2;
-boost::intrusive_ptr<Geometry> largeDebugCircle;
+blunted::intrusive_ptr<Geometry> smallDebugCircle1;
+blunted::intrusive_ptr<Geometry> smallDebugCircle2;
+blunted::intrusive_ptr<Geometry> largeDebugCircle;
 
 void SetGreenDebugPilon(const Vector3 &pos) { greenPilon->SetPosition(pos, false); }
 void SetBlueDebugPilon(const Vector3 &pos) { bluePilon->SetPosition(pos, false); }
@@ -75,21 +77,21 @@ void SetSmallDebugCircle1(const Vector3 &pos) { smallDebugCircle1->SetPosition(p
 void SetSmallDebugCircle2(const Vector3 &pos) { smallDebugCircle2->SetPosition(pos, false); }
 void SetLargeDebugCircle(const Vector3 &pos) { largeDebugCircle->SetPosition(pos, false); }
 
-boost::intrusive_ptr<Geometry> GetGreenDebugPilon() { return greenPilon; }
-boost::intrusive_ptr<Geometry> GetBlueDebugPilon() { return bluePilon; }
-boost::intrusive_ptr<Geometry> GetYellowDebugPilon() { return yellowPilon; }
-boost::intrusive_ptr<Geometry> GetRedDebugPilon() { return redPilon; }
+blunted::intrusive_ptr<Geometry> GetGreenDebugPilon() { return greenPilon; }
+blunted::intrusive_ptr<Geometry> GetBlueDebugPilon() { return bluePilon; }
+blunted::intrusive_ptr<Geometry> GetYellowDebugPilon() { return yellowPilon; }
+blunted::intrusive_ptr<Geometry> GetRedDebugPilon() { return redPilon; }
 
-boost::intrusive_ptr<Geometry> GetSmallDebugCircle1() { return smallDebugCircle1; }
-boost::intrusive_ptr<Geometry> GetSmallDebugCircle2() { return smallDebugCircle2; }
-boost::intrusive_ptr<Geometry> GetLargeDebugCircle() { return largeDebugCircle; }
+blunted::intrusive_ptr<Geometry> GetSmallDebugCircle1() { return smallDebugCircle1; }
+blunted::intrusive_ptr<Geometry> GetSmallDebugCircle2() { return smallDebugCircle2; }
+blunted::intrusive_ptr<Geometry> GetLargeDebugCircle() { return largeDebugCircle; }
 
 Database *db;
 
 Properties *config;
 
-boost::intrusive_ptr<Image2D> debugImage;
-boost::intrusive_ptr<Image2D> debugOverlay;
+blunted::intrusive_ptr<Image2D> debugImage;
+blunted::intrusive_ptr<Image2D> debugOverlay;
 
 std::vector<IHIDevice*> controllers;
 
@@ -103,11 +105,11 @@ std::string GetConfigFilename() {
   return configFile;
 }
 
-boost::shared_ptr<Scene2D> GetScene2D() {
+std::shared_ptr<Scene2D> GetScene2D() {
   return scene2D;
 }
 
-boost::shared_ptr<Scene3D> GetScene3D() {
+std::shared_ptr<Scene3D> GetScene3D() {
   return scene3D;
 }
 
@@ -115,11 +117,11 @@ GraphicsSystem *GetGraphicsSystem() {
   return graphicsSystem;
 }
 
-boost::shared_ptr<GameTask> GetGameTask() {
+std::shared_ptr<GameTask> GetGameTask() {
   return gameTask;
 }
 
-boost::shared_ptr<MenuTask> GetMenuTask() {
+std::shared_ptr<MenuTask> GetMenuTask() {
   return menuTask;
 }
 
@@ -160,11 +162,11 @@ e_DebugMode GetDebugMode() {
   return debugMode;
 }
 
-boost::intrusive_ptr<Image2D> GetDebugImage() {
+blunted::intrusive_ptr<Image2D> GetDebugImage() {
   return debugImage;
 }
 
-boost::intrusive_ptr<Image2D> GetDebugOverlay() {
+blunted::intrusive_ptr<Image2D> GetDebugOverlay() {
   return debugOverlay;
 }
 
@@ -191,12 +193,12 @@ int PredictFrameTimeToGo_ms(int frameCount) {
 void InitDebugImage() {
   SDL_Surface *sdlSurface = CreateSDLSurface(200, 150);
 
-  boost::intrusive_ptr < Resource <Surface> > resource = ResourceManagerPool::GetInstance().GetManager<Surface>(e_ResourceType_Surface)->Fetch("debugimage", false, true);
+  blunted::intrusive_ptr < Resource <Surface> > resource = ResourceManagerPool::GetInstance().GetManager<Surface>(e_ResourceType_Surface)->Fetch("debugimage", false, true);
   Surface *surface = resource->GetResource();
 
   surface->SetData(sdlSurface);
 
-  debugImage = boost::static_pointer_cast<Image2D>(ObjectFactory::GetInstance().CreateObject("debugimage", e_ObjectType_Image2D));
+  debugImage = blunted::static_pointer_cast<Image2D>(ObjectFactory::GetInstance().CreateObject("debugimage", e_ObjectType_Image2D));
   scene2D->CreateSystemObjects(debugImage);
   debugImage->SetImage(resource);
 
@@ -216,21 +218,25 @@ void InitDebugOverlay() {
 
   SDL_Surface *sdlSurface = CreateSDLSurface(contextW, contextH);
 
-  boost::intrusive_ptr < Resource <Surface> > resource = ResourceManagerPool::GetInstance().GetManager<Surface>(e_ResourceType_Surface)->Fetch("debugoverlay", false, true);
+  blunted::intrusive_ptr < Resource <Surface> > resource = ResourceManagerPool::GetInstance().GetManager<Surface>(e_ResourceType_Surface)->Fetch("debugoverlay", false, true);
   Surface *surface = resource->GetResource();
 
   surface->SetData(sdlSurface);
 
-  debugOverlay = boost::static_pointer_cast<Image2D>(ObjectFactory::GetInstance().CreateObject("debugoverlay", e_ObjectType_Image2D));
+  debugOverlay = blunted::static_pointer_cast<Image2D>(ObjectFactory::GetInstance().CreateObject("debugoverlay", e_ObjectType_Image2D));
   scene2D->CreateSystemObjects(debugOverlay);
   debugOverlay->SetImage(resource);
 
   debugOverlay->SetPosition(0, 0);
+  debugOverlay->SetPokePriority(-1);
 
   scene2D->AddObject(debugOverlay);
 
   debugOverlay->DrawRectangle(0, 0, contextW, contextH, Vector3(0, 0, 0), 0);
   debugOverlay->OnChange();
+  if (GetDebugMode() != e_DebugMode_AI) {
+    debugOverlay->Disable();
+  }
 }
 
 const std::vector<IHIDevice*> &GetControllers() {
@@ -253,7 +259,7 @@ class ThreadHudThread : public Thread {
         SetState(e_ThreadState_Busy);
 
         bool isMessage = false;
-        boost::intrusive_ptr<Command> message = boost::intrusive_ptr<Command>();
+        blunted::intrusive_ptr<Command> message = blunted::intrusive_ptr<Command>();
         message = messageQueue.GetMessage(isMessage);
         if (isMessage) {
           if (!message->Handle(this)) quit = true;
@@ -264,7 +270,7 @@ class ThreadHudThread : public Thread {
 
         SetState(e_ThreadState_Idle);
 
-        boost::this_thread::yield();
+        std::this_thread::yield();
       }
     }
 
@@ -276,11 +282,41 @@ class ThreadHudThread : public Thread {
 
 int main(int argc, char** argv) {
 
+  {
+    std::error_code ec;
+    if (!std::filesystem::exists("media", ec) || !std::filesystem::exists("databases", ec)) {
+      char *basePath = SDL_GetBasePath();
+      if (basePath) {
+        if (std::filesystem::exists(std::filesystem::path(basePath) / "media", ec)) {
+          std::filesystem::current_path(basePath, ec);
+        }
+        SDL_free(basePath);
+      }
+    }
+  }
+
+  bool upgradeAssetsMode = false;
   config = new Properties();
-  if (argc > 1) configFile = argv[1];
+  for (int a = 1; a < argc; ++a) {
+    std::string arg = argv[a];
+    if (arg == "--upgrade-assets") {
+      upgradeAssetsMode = true;
+    } else if (!arg.empty() && arg[0] != '-') {
+      configFile = arg;
+    }
+  }
   config->LoadFile(configFile.c_str());
 
   Initialize(*config);
+
+  if (upgradeAssetsMode) {
+    IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
+    AssetUpgradeSummary summary;
+    bool ok = RunAssetLibraryUpgrade("media", summary);
+    IMG_Quit();
+    delete config;
+    return ok ? 0 : 1;
+  }
 
   srand(time(NULL));
   rand(); // mingw32? buggy compiler? first value seems bogus
@@ -313,17 +349,23 @@ int main(int argc, char** argv) {
   graphicsSystem->Initialize(*config);
   audioSystem->Initialize(*config);
 
+  // Synchronize effective 3D context dimensions back into config so Scene2D and GUI2 match 1:1
+  Vector3 initializedCtxSize = graphicsSystem->GetContextSize();
+  config->SetInt("context_x", int(initializedCtxSize.coords[0]));
+  config->SetInt("context_y", int(initializedCtxSize.coords[1]));
+  config->SetInt("context_bpp", int(initializedCtxSize.coords[2]));
+
 
   // init scenes
 
-  scene2D = boost::shared_ptr<Scene2D>(new Scene2D("scene2D", *config));
+  scene2D = std::shared_ptr<Scene2D>(new Scene2D("scene2D", *config));
   SceneManager::GetInstance().RegisterScene(scene2D);
 
-  scene3D = boost::shared_ptr<Scene3D>(new Scene3D("scene3D"));
+  scene3D = std::shared_ptr<Scene3D>(new Scene3D("scene3D"));
   SceneManager::GetInstance().RegisterScene(scene3D);
 
   if (SuperDebug()) InitDebugImage();
-  if (GetDebugMode() == e_DebugMode_AI) InitDebugOverlay();
+  InitDebugOverlay();
 
   ThreadHudThread *threadHudThread = 0;
   if (!IsReleaseVersion() && 1 == 2) {
@@ -336,7 +378,7 @@ int main(int argc, char** argv) {
 
   // debug pilons
 
-  boost::intrusive_ptr < Resource<GeometryData> > geometry = ResourceManagerPool::GetInstance().GetManager<GeometryData>(e_ResourceType_GeometryData)->Fetch("media/objects/helpers/green.ase", true);
+  blunted::intrusive_ptr < Resource<GeometryData> > geometry = ResourceManagerPool::GetInstance().GetManager<GeometryData>(e_ResourceType_GeometryData)->Fetch("media/objects/helpers/green.ase", true);
   greenPilon = static_pointer_cast<Geometry>(ObjectFactory::GetInstance().CreateObject("greenPilon", e_ObjectType_Geometry));
   scene3D->CreateSystemObjects(greenPilon);
   greenPilon->SetGeometryData(geometry);
@@ -407,30 +449,32 @@ int main(int argc, char** argv) {
 
   // sequences
 
-  boost::mutex graphicsGameMutex; // todo: this mutex seems necessary for visual fluency, doesn't this imply that i'm setting positional stuff during something else than gametask put? (or reading during something else than graphics get)
+  std::mutex graphicsGameMutex; // todo: this mutex seems necessary for visual fluency, doesn't this imply that i'm setting positional stuff during something else than gametask put? (or reading during something else than graphics get)
 
-  gameTask = boost::shared_ptr<GameTask>(new GameTask());
+  gameTask = std::shared_ptr<GameTask>(new GameTask());
 
-  // TTF_Font *defaultFont = TTF_OpenFont("media/fonts/archivonarrow/ArchivoNarrow-Regular.ttf", 28);
-  // TTF_Font *defaultOutlineFont = TTF_OpenFont("media/fonts/archivonarrow/ArchivoNarrow-Regular.ttf", 28);
+  int uiContextW = 1920, uiContextH = 1080, uiContextBpp = 32;
+  scene2D->GetContextSize(uiContextW, uiContextH, uiContextBpp);
+  int fontPx = clamp(int(std::round(uiContextH * 46.0f / 1080.0f)), 32, 96);
+  int outlinePx = std::max(2, int(std::round(fontPx / 20.0f)));
+  float uiAspectRatio = (float)uiContextW / (float)std::max(1, uiContextH);
+
   std::string fontfilename = config->Get("font_filename", "media/fonts/alegreya/AlegreyaSansSC-ExtraBold.ttf");
-  TTF_Font *defaultFont = TTF_OpenFont(fontfilename.c_str(), 32);
+  TTF_Font *defaultFont = TTF_OpenFont(fontfilename.c_str(), fontPx);
   if (!defaultFont) Log(e_FatalError, "football", "main", "Could not load font " + fontfilename);
-  TTF_Font *defaultOutlineFont = TTF_OpenFont(fontfilename.c_str(), 32);
-  TTF_SetFontOutline(defaultOutlineFont, 2);
-  menuTask = boost::shared_ptr<MenuTask>(new MenuTask(5.0f / 4.0f, 0, defaultFont, defaultOutlineFont));
+  TTF_Font *defaultOutlineFont = TTF_OpenFont(fontfilename.c_str(), fontPx);
+  TTF_SetFontOutline(defaultOutlineFont, outlinePx);
+  menuTask = std::shared_ptr<MenuTask>(new MenuTask(uiAspectRatio, 0, defaultFont, defaultOutlineFont));
   if (controllers.size() > 1) menuTask->SetEventJoyButtons(static_cast<HIDGamepad*>(controllers.at(1))->GetControllerMapping(e_ControllerButton_A), static_cast<HIDGamepad*>(controllers.at(1))->GetControllerMapping(e_ControllerButton_B));
 
 
-  gameSequence = boost::shared_ptr<TaskSequence>(new TaskSequence("game", timeStep_ms, false));
+  gameSequence = std::shared_ptr<TaskSequence>(new TaskSequence("game", timeStep_ms, false));
 
   // note: the whole locking stuff is now happening from within some of the code, iirc, 't is all very ugly and unclear. sorry
 
   //gameSequence->AddLockEntry(graphicsGameMutex, e_LockAction_Lock);   // ---------- lock -----
 
-  gameSequence->AddUserTaskEntry(menuTask, e_TaskPhase_Get);
   gameSequence->AddUserTaskEntry(menuTask, e_TaskPhase_Process);
-  gameSequence->AddUserTaskEntry(menuTask, e_TaskPhase_Put);
 
   //gameSequence->AddLockEntry(graphicsGameMutex, e_LockAction_Unlock); // ---------- unlock ---
 
@@ -443,7 +487,7 @@ int main(int argc, char** argv) {
 
 
 
-  graphicsSequence = boost::shared_ptr<TaskSequence>(new TaskSequence("graphics", config->GetInt("graphics3d_frametime_ms", 0), true));
+  graphicsSequence = std::shared_ptr<TaskSequence>(new TaskSequence("graphics", config->GetInt("graphics3d_frametime_ms", 0), true));
 
   graphicsSequence->AddUserTaskEntry(gameTask, e_TaskPhase_Put);
 
@@ -467,7 +511,7 @@ int main(int argc, char** argv) {
   // exit
 
   if (SuperDebug()) scene2D->DeleteObject(debugImage);
-  if (GetDebugMode() == e_DebugMode_AI) scene2D->DeleteObject(debugOverlay);
+  if (debugOverlay) scene2D->DeleteObject(debugOverlay);
 
   gameTask.reset();
   menuTask.reset();
@@ -491,7 +535,7 @@ int main(int argc, char** argv) {
   largeDebugCircle.reset();
 
   if (threadHudThread) {
-    boost::intrusive_ptr<Message_Shutdown> shutdownMessage = new Message_Shutdown();
+    blunted::intrusive_ptr<Message_Shutdown> shutdownMessage = new Message_Shutdown();
     threadHudThread->messageQueue.PushMessage(shutdownMessage);
     threadHudThread->Join();
     delete threadHudThread;

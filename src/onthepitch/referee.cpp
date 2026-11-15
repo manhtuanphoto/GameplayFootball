@@ -30,12 +30,27 @@ Referee::Referee(Match *match) : match(match) {
   foul.hasBeenProcessed = true;
 
   afterSetPieceRelaxTime_ms = 0;
+  freeKickPlayStart_ms = 0;
+  gkRetainStart_ms = 0;
+
+  if (match && match->IsFreeKickMode()) {
+    match->IncrementFreeKickAttemptCount();
+    buffer.desiredSetPiece = e_SetPiece_FreeKick;
+    buffer.teamID = 0;
+    buffer.stopTime = 0;
+    buffer.prepareTime = 0;
+    buffer.startTime = 1400;
+    buffer.restartPos = GenerateFreeKickSpot();
+    buffer.taker = 0;
+    buffer.endPhase = true;
+    buffer.active = true;
+  }
 
 
   // whistle
 
-  boost::intrusive_ptr < Resource<SoundBuffer> > soundBufferRes = ResourceManagerPool::GetInstance().GetManager<SoundBuffer>(e_ResourceType_SoundBuffer)->Fetch("media/sounds/whistle2.wav", true, true);
-  whistle[1] = boost::static_pointer_cast<Sound>(ObjectFactory::GetInstance().CreateObject("whistle1", e_ObjectType_Sound));
+  blunted::intrusive_ptr < Resource<SoundBuffer> > soundBufferRes = ResourceManagerPool::GetInstance().GetManager<SoundBuffer>(e_ResourceType_SoundBuffer)->Fetch("media/sounds/whistle2.wav", true, true);
+  whistle[1] = blunted::static_pointer_cast<Sound>(ObjectFactory::GetInstance().CreateObject("whistle1", e_ObjectType_Sound));
   GetScene3D()->CreateSystemObjects(whistle[1]);
   whistle[1]->SetSoundBuffer(soundBufferRes);
   //whistle[1]->SetGain(0.3 * GetConfiguration()->GetReal("audio_volume", 0.5));
@@ -43,7 +58,7 @@ Referee::Referee(Match *match) : match(match) {
   GetScene3D()->AddObject(whistle[1]);
 
   soundBufferRes = ResourceManagerPool::GetInstance().GetManager<SoundBuffer>(e_ResourceType_SoundBuffer)->Fetch("media/sounds/whistle3.wav", true, true);
-  whistle[3] = boost::static_pointer_cast<Sound>(ObjectFactory::GetInstance().CreateObject("whistle3", e_ObjectType_Sound));
+  whistle[3] = blunted::static_pointer_cast<Sound>(ObjectFactory::GetInstance().CreateObject("whistle3", e_ObjectType_Sound));
   GetScene3D()->CreateSystemObjects(whistle[3]);
   whistle[3]->SetSoundBuffer(soundBufferRes);
   //whistle[3]->SetGain(0.3 * GetConfiguration()->GetReal("audio_volume", 0.5));
@@ -73,9 +88,10 @@ void Referee::Process() {
     Vector3 ballPos = match->GetBall()->Predict(0);
 
 
-    // some phase is over :[
+    // some phase is over :[ (disabled in Endless Sandbox & Free Kick modes)
 
-    if (((match->GetMatchPhase() == e_MatchPhase_1stHalf && match->GetMatchTime_ms() > 2700000) ||
+    if (!match->IsSandboxEndless() && !match->IsFreeKickMode() &&
+        ((match->GetMatchPhase() == e_MatchPhase_1stHalf && match->GetMatchTime_ms() > 2700000) ||
          (match->GetMatchPhase() == e_MatchPhase_2ndHalf && match->GetMatchTime_ms() > 5400000) ||
          (match->GetMatchPhase() == e_MatchPhase_1stExtraTime && match->GetMatchTime_ms() > 6300000) ||
          (match->GetMatchPhase() == e_MatchPhase_2ndExtraTime && match->GetMatchTime_ms() > 7200000)) &&
@@ -113,7 +129,7 @@ void Referee::Process() {
 
     // goal kick / corner
 
-    if (fabs(ballPos.coords[0]) > pitchHalfW + lineHalfW + 0.11) {
+    if (fabs(ballPos.coords[0]) > pitchHalfW + lineHalfW + 0.11 || match->IsGoalScored()) {
 
       foul.advantage = false;
       bool isFoul = false;
@@ -129,12 +145,28 @@ void Referee::Process() {
         lastSide = lastTouchTeam->GetSide();
 
         if (match->IsGoalScored()) {
-          buffer.desiredSetPiece = e_SetPiece_KickOff;
-          buffer.stopTime = match->GetActualTime_ms();
-          buffer.prepareTime = match->GetActualTime_ms() + 6000;
-          buffer.startTime = buffer.prepareTime + 2000;
-          buffer.restartPos = Vector3(0, 0, 0);
-          buffer.teamID = abs(match->GetLastGoalTeamID() - 1);
+          bool isAISpectator = (match->GetTeam(0)->GetHumanGamerCount() == 0 &&
+                                match->GetTeam(1)->GetHumanGamerCount() == 0);
+          if (match->IsFreeKickMode()) {
+            match->IncrementFreeKickAttemptCount();
+            buffer.desiredSetPiece = e_SetPiece_FreeKick;
+            buffer.stopTime = match->GetActualTime_ms();
+            buffer.prepareTime = match->GetActualTime_ms() + 6800;
+            buffer.startTime = buffer.prepareTime + 1400;
+            buffer.restartPos = GenerateFreeKickSpot();
+            buffer.teamID = 0;
+          } else {
+            buffer.desiredSetPiece = e_SetPiece_KickOff;
+            buffer.stopTime = match->GetActualTime_ms();
+            buffer.prepareTime = match->GetActualTime_ms() + (isAISpectator ? 9000 : 10800);
+            buffer.startTime = buffer.prepareTime + 2000;
+            buffer.restartPos = Vector3(0, 0, 0);
+            buffer.teamID = abs(match->GetLastGoalTeamID() - 1);
+          }
+
+        } else if (match->IsFreeKickMode()) {
+          QueueNextFreeKickScenario(false);
+          return;
 
         } else if ((ballPos.coords[0] > 0 && lastSide > 0) || (ballPos.coords[0] < 0 && lastSide < 0)) {
           buffer.desiredSetPiece = e_SetPiece_Corner;
@@ -167,6 +199,10 @@ void Referee::Process() {
       if (fabs(ballPos.coords[1]) > pitchHalfH + lineHalfW + 0.11) {
         foul.advantage = false;
         if (!CheckFoul()) {
+          if (match->IsFreeKickMode()) {
+            QueueNextFreeKickScenario(false);
+            return;
+          }
           match->StopPlay();
           Team *lastTouchTeam = match->GetLastTouchTeam();
           if (lastTouchTeam == 0) lastTouchTeam = match->GetTeam(0);
@@ -181,6 +217,28 @@ void Referee::Process() {
           buffer.restartPos.coords[2] = 0;
           buffer.active = true;
         }
+      }
+    }
+
+    if (match->IsFreeKickMode() && !match->IsGoalScored() && !buffer.active) {
+      signed int attackDir = -match->GetTeam(0)->GetSide();
+      Player *retainer = match->GetBallRetainer();
+      if (retainer != 0 && retainer->GetTeamID() == 1) {
+        if (gkRetainStart_ms == 0) gkRetainStart_ms = match->GetActualTime_ms();
+        if (match->GetActualTime_ms() - gkRetainStart_ms >= 1100) {
+          match->SpamMessage("Saved & Held by Keeper! Next Free Kick...", 1600);
+          QueueNextFreeKickScenario(false);
+          return;
+        }
+      } else {
+        gkRetainStart_ms = 0;
+      }
+
+      bool clearedAway = (ballPos.coords[0] * attackDir < 10.0f);
+      bool playTimedOut = (freeKickPlayStart_ms > 0 && (match->GetActualTime_ms() - freeKickPlayStart_ms > 9000));
+      if (clearedAway || playTimedOut) {
+        QueueNextFreeKickScenario(false);
+        return;
       }
     }
 
@@ -238,6 +296,8 @@ void Referee::Process() {
       match->GetTeam(0)->GetController()->PrepareSetPiece(e_SetPiece_None);
       match->GetTeam(1)->GetController()->PrepareSetPiece(e_SetPiece_None);
       afterSetPieceRelaxTime_ms = 400;
+      freeKickPlayStart_ms = match->GetActualTime_ms();
+      gkRetainStart_ms = 0;
       foul.foulPlayer = 0;
       foul.foulType = 0;
 
@@ -250,6 +310,75 @@ void Referee::Process() {
   if (afterSetPieceRelaxTime_ms > 0) afterSetPieceRelaxTime_ms -= 10;
 }
 
+Vector3 Referee::GenerateFreeKickSpot() {
+  signed int attackDir = -match->GetTeam(0)->GetSide(); // +1: attacks right goal (+pitchHalfW)
+  int preset = match->GetFreeKickPreset();
+
+  float distFromGoalLine = 21.5f;
+  float yPos = 0.0f;
+
+  if (preset == 1) {
+    // Central Edge of Box (18.5m - 22.5m, slight central offset)
+    distFromGoalLine = random(18.5f, 22.5f);
+    yPos = random(-5.5f, 5.5f);
+  } else if (preset == 2) {
+    // Left / Right Wing Curlers (20.5m - 25.5m, wide angle outside penalty arc)
+    distFromGoalLine = random(20.5f, 25.5f);
+    float sideSign = (match->GetFreeKickAttemptCount() % 2 == 0) ? 1.0f : -1.0f;
+    yPos = sideSign * random(8.5f, 16.5f);
+  } else if (preset == 3) {
+    // Long-Range Rockets (27.0m - 32.5m)
+    distFromGoalLine = random(27.0f, 32.5f);
+    yPos = random(-13.0f, 13.0f);
+  } else {
+    // Varied Spots (rotates across central, left curler, right curler, and 26-29m power spots)
+    int cycle = match->GetFreeKickAttemptCount() % 4;
+    if (cycle == 1) {
+      distFromGoalLine = random(18.5f, 21.5f);
+      yPos = random(-4.8f, 4.8f);
+    } else if (cycle == 2) {
+      distFromGoalLine = random(21.0f, 24.8f);
+      yPos = random(7.5f, 15.0f);
+    } else if (cycle == 3) {
+      distFromGoalLine = random(21.0f, 24.8f);
+      yPos = -random(7.5f, 15.0f);
+    } else {
+      distFromGoalLine = random(25.5f, 29.5f);
+      yPos = random(-10.5f, 10.5f);
+    }
+  }
+
+  // Ensure strictly outside the penalty box (16.5m x +-20.15m) so it is always a true Free Kick
+  if (distFromGoalLine < 17.8f && fabs(yPos) < 20.5f) {
+    distFromGoalLine = 17.8f;
+  }
+
+  float xPos = (pitchHalfW - distFromGoalLine) * (float)attackDir;
+  return Vector3(xPos, yPos, 0.0f);
+}
+
+void Referee::QueueNextFreeKickScenario(bool immediate) {
+  foul.advantage = false;
+  foul.foulPlayer = 0;
+  foul.foulType = 0;
+  foul.hasBeenProcessed = true;
+  gkRetainStart_ms = 0;
+  freeKickPlayStart_ms = 0;
+
+  match->StopPlay();
+  match->StopSetPiece();
+  match->IncrementFreeKickAttemptCount();
+
+  buffer.desiredSetPiece = e_SetPiece_FreeKick;
+  buffer.teamID = 0;
+  buffer.stopTime = match->GetActualTime_ms();
+  buffer.prepareTime = immediate ? match->GetActualTime_ms() : (match->GetActualTime_ms() + 1400);
+  buffer.startTime = buffer.prepareTime + 1300;
+  buffer.restartPos = GenerateFreeKickSpot();
+  buffer.endPhase = false;
+  buffer.active = true;
+}
+
 void Referee::PrepareSetPiece(e_SetPiece setPiece) {
   // position players for set piece situation
 
@@ -259,6 +388,16 @@ void Referee::PrepareSetPiece(e_SetPiece setPiece) {
   match->GetTeam(1)->GetController()->PrepareSetPiece(setPiece, buffer.teamID);
 
   buffer.taker = match->GetTeam(buffer.teamID)->GetController()->GetPieceTaker();
+  if (buffer.taker && match->GetTeam(buffer.teamID)->GetHumanGamerCount() > 0) {
+    match->GetTeam(buffer.teamID)->SelectPlayer(buffer.taker);
+  }
+
+  if (match->IsFreeKickMode() && setPiece == e_SetPiece_FreeKick) {
+    signed int attackDir = -match->GetTeam(0)->GetSide();
+    float distM = (Vector3(pitchHalfW * (float)attackDir, 0, 0) - buffer.restartPos).GetLength();
+    std::string takerName = buffer.taker ? buffer.taker->GetPlayerData()->GetLastName() : "Taker";
+    match->SpamMessage("Free Kick #" + int_to_str(match->GetFreeKickAttemptCount()) + " (" + int_to_str((int)round(distM)) + "m) - " + takerName + "  |  [D] Shoot  [A] Lob  [S] Pass  [F5] New Spot", 3200);
+  }
 }
 
 void Referee::AlterSetPiecePrepareTime(unsigned long newTime_ms) {
@@ -281,6 +420,11 @@ void Referee::BallTouched() {
         foul.advantage = false;
         if (!CheckFoul()) {
           // uooooga uooooga offside!
+          if (match->IsFreeKickMode()) {
+            match->SpamMessage("offside! Next Free Kick...", 1800);
+            QueueNextFreeKickScenario(false);
+            break;
+          }
           match->StopPlay();
           buffer.desiredSetPiece = e_SetPiece_FreeKick;
           buffer.stopTime = match->GetActualTime_ms();
@@ -407,6 +551,12 @@ bool Referee::CheckFoul() {
   }
 
   if (foul.foulType != 0 && foul.advantage == false && !foul.hasBeenProcessed) {
+
+    if (match->IsFreeKickMode() && foul.foulVictim && foul.foulVictim->GetTeam()->GetID() != 0) {
+      foul.hasBeenProcessed = true;
+      QueueNextFreeKickScenario(false);
+      return true;
+    }
 
     match->StopPlay();
     if (!penalty) {

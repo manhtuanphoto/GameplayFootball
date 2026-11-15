@@ -17,7 +17,7 @@ namespace blunted {
     //printf("ERASING VERTEXBUFFER ID #%i\n", vertexBufferID);
 
     if (vertexBufferID != -1) {
-      boost::intrusive_ptr<Renderer3DMessage_DeleteVertexBuffer> deleteVertexBuffer(new Renderer3DMessage_DeleteVertexBuffer(vertexBufferID));
+      blunted::intrusive_ptr<Renderer3DMessage_DeleteVertexBuffer> deleteVertexBuffer(new Renderer3DMessage_DeleteVertexBuffer(vertexBufferID));
       renderer3D->messageQueue.PushMessage(deleteVertexBuffer);
 
       deleteVertexBuffer->Wait();
@@ -27,7 +27,7 @@ namespace blunted {
   int VertexBuffer::CreateVertexBuffer(Renderer3D *renderer3D, std::vector<Triangle*> triangles) {
     this->renderer3D = renderer3D;
 
-    boost::intrusive_ptr<Renderer3DMessage_CreateVertexBuffer> createVertexBuffer(new Renderer3DMessage_CreateVertexBuffer(triangles));
+    blunted::intrusive_ptr<Renderer3DMessage_CreateVertexBuffer> createVertexBuffer(new Renderer3DMessage_CreateVertexBuffer(triangles));
     renderer3D->messageQueue.PushMessage(createVertexBuffer);
     createVertexBuffer->Wait();
 

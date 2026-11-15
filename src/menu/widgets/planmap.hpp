@@ -24,7 +24,7 @@ namespace blunted {
       virtual void Process();
 
     protected:
-      boost::intrusive_ptr<Image2D> image;
+      blunted::intrusive_ptr<Image2D> image;
 
       int w, h;
 

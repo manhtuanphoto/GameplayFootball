@@ -8,6 +8,8 @@
 #include "utils/gui2/windowmanager.hpp"
 
 #include "utils/gui2/page.hpp"
+#include "utils/gui2/widgets/image.hpp"
+#include "utils/gui2/widgets/caption.hpp"
 
 class Match;
 
@@ -32,7 +34,19 @@ class GamePage : public Gui2Page {
     void OnCreatedMatch();
 
   protected:
+    std::string BuildTestKeysCaptionText() const;
+
     Match *match;
+    std::string f5ModeLabel;
+    Gui2Image *hotkeyBg;
+    Gui2Caption *controlsCaption;
+    Gui2Caption *actionsCaption;
+    Gui2Caption *testKeysCaption;
+    bool showHotkeyBar;
+    SignalConnection matchPhaseConn;
+    SignalConnection shortReplayConn;
+    SignalConnection extendedReplayConn;
+    SignalConnection gameOverConn;
 
 };
 

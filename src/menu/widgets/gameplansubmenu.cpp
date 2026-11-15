@@ -12,7 +12,7 @@ GamePlanSubMenu::GamePlanSubMenu(Gui2WindowManager *windowManager, Gui2View *par
   grid->SetQuickScroll(true);
   grid->Show();
 
-  sig_OnClose.connect(boost::bind(&GamePlanSubMenu::OnClose, this));
+  sig_OnClose.connect(blunted::Bind(&GamePlanSubMenu::OnClose, this));
 }
 
 GamePlanSubMenu::~GamePlanSubMenu() {

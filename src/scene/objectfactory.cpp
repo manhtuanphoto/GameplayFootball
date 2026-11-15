@@ -27,7 +27,7 @@ namespace blunted {
   }
 
   void ObjectFactory::Exit() {
-    std::map <e_ObjectType, boost::intrusive_ptr<Object> >::iterator prototype_iter = prototypes.begin();
+    std::map <e_ObjectType, blunted::intrusive_ptr<Object> >::iterator prototype_iter = prototypes.begin();
     while (prototype_iter != prototypes.end()) {
       prototype_iter->second->Exit();
       prototype_iter++;
@@ -35,7 +35,7 @@ namespace blunted {
     prototypes.clear();
   }
 
-  boost::intrusive_ptr<Object> ObjectFactory::CreateObject(const std::string &name, std::string objectTypeStr, std::string postfix) {
+  blunted::intrusive_ptr<Object> ObjectFactory::CreateObject(const std::string &name, std::string objectTypeStr, std::string postfix) {
     e_ObjectType objectType = e_ObjectType_Geometry;
     if (objectTypeStr == "Camera") objectType = e_ObjectType_Camera; else
     if (objectTypeStr == "Image2D") objectType = e_ObjectType_Image2D; else
@@ -49,10 +49,10 @@ namespace blunted {
     return CreateObject(name, objectType, postfix);
   }
 
-  boost::intrusive_ptr<Object> ObjectFactory::CreateObject(const std::string &name, e_ObjectType objectType, std::string postfix) {
-    std::map <e_ObjectType, boost::intrusive_ptr<Object> >::iterator prototype_iter = prototypes.find(objectType);
+  blunted::intrusive_ptr<Object> ObjectFactory::CreateObject(const std::string &name, e_ObjectType objectType, std::string postfix) {
+    std::map <e_ObjectType, blunted::intrusive_ptr<Object> >::iterator prototype_iter = prototypes.find(objectType);
     if (prototype_iter != prototypes.end()) {
-      boost::intrusive_ptr<Object> bla = CopyObject((*prototype_iter).second, postfix);
+      blunted::intrusive_ptr<Object> bla = CopyObject((*prototype_iter).second, postfix);
       bla->SetName(name);
       return bla;
     } else {
@@ -61,8 +61,8 @@ namespace blunted {
     }
   }
 
-  boost::intrusive_ptr<Object> ObjectFactory::CopyObject(boost::intrusive_ptr<Object> source, std::string postfix) {
-    boost::intrusive_ptr<Object> bla;
+  blunted::intrusive_ptr<Object> ObjectFactory::CopyObject(blunted::intrusive_ptr<Object> source, std::string postfix) {
+    blunted::intrusive_ptr<Object> bla;
 
     switch (source->GetObjectType()) {
       case e_ObjectType_Camera:
@@ -93,12 +93,12 @@ namespace blunted {
         Log(e_FatalError, "ObjectFactory", "CopyObject", "Object type " + int_to_str(source->GetObjectType()) + " not found");
         break;
     }
-    assert(bla != boost::intrusive_ptr<Object>());
+    assert(bla != blunted::intrusive_ptr<Object>());
     return bla;
   }
 
-  void ObjectFactory::RegisterPrototype(e_ObjectType objectType, boost::intrusive_ptr<Object> prototype) {
-    prototypes.insert(std::pair<e_ObjectType, boost::intrusive_ptr<Object> >(objectType, prototype));
+  void ObjectFactory::RegisterPrototype(e_ObjectType objectType, blunted::intrusive_ptr<Object> prototype) {
+    prototypes.insert(std::pair<e_ObjectType, blunted::intrusive_ptr<Object> >(objectType, prototype));
   }
 
 }

@@ -17,20 +17,20 @@ namespace blunted {
   class OrbitCamera : public IUserTask {
 
     public:
-      OrbitCamera(boost::shared_ptr<Scene3D> scene3D, const Vector3 &position);
+      OrbitCamera(std::shared_ptr<Scene3D> scene3D, const Vector3 &position);
       virtual ~OrbitCamera();
 
-      boost::intrusive_ptr<Node> GetCameraNode();
+      blunted::intrusive_ptr<Node> GetCameraNode();
 
       virtual void GetPhase();
       virtual void ProcessPhase();
       virtual void PutPhase();
 
     protected:
-      boost::intrusive_ptr<Camera> orbitCamera;
-      boost::intrusive_ptr<Light> light;
-      boost::intrusive_ptr<Light> light2;
-      boost::intrusive_ptr<Node> orbitCameraNode;
+      blunted::intrusive_ptr<Camera> orbitCamera;
+      blunted::intrusive_ptr<Light> light;
+      blunted::intrusive_ptr<Light> light2;
+      blunted::intrusive_ptr<Node> orbitCameraNode;
 
       radian mouseVert, mouseHoriz;
 

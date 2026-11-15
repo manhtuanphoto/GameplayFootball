@@ -4,6 +4,8 @@ set(BASE_HEADERS
         src/base/utils.hpp
         src/base/properties.hpp
         src/base/sdl_surface.hpp
+        src/base/signal.hpp
+        src/base/circular_buffer.hpp
         )
 
 set(BASE_GEOMETRY_HEADERS
@@ -148,6 +150,8 @@ set(SYSTEMS_AUDIO_SOURCES
 
 set(LOADERS_HEADERS
         src/loaders/aseloader.hpp
+        src/loaders/gltfdata.hpp
+        src/loaders/gltfloader.hpp
         src/loaders/wavloader.hpp
         src/loaders/imageloader.hpp
         )
@@ -155,10 +159,13 @@ set(LOADERS_HEADERS
 set(LOADERS_SOURCES
         src/loaders/imageloader.cpp
         src/loaders/aseloader.cpp
+        src/loaders/gltfdata.cpp
+        src/loaders/gltfloader.cpp
         src/loaders/wavloader.cpp
         )
 
 set(TYPES_HEADERS
+        src/types/intrusive_ptr.hpp
         src/types/trianglemesh.hpp
         src/types/subject.hpp
         src/types/spatial.hpp
@@ -271,6 +278,7 @@ set(MANAGERS_SOURCES
 
 set(UTILS_HEADERS
         src/utils/animation.hpp
+        src/utils/assetupgrader.hpp
         src/utils/objectloader.hpp
         src/utils/database.hpp
         src/utils/xmlloader.hpp
@@ -292,6 +300,7 @@ set(UTILS_SOURCES
         src/utils/text2d.cpp
         src/utils/orbitcamera.cpp
         src/utils/animation.cpp
+        src/utils/assetupgrader.cpp
         src/utils/splitgeometry.cpp
         src/utils/objectloader.cpp
         src/utils/directoryparser.cpp
@@ -433,6 +442,7 @@ set(GAME_HEADERS
    src/onthepitch/match.hpp
    src/onthepitch/AIsupport/AIfunctions.hpp
    src/onthepitch/AIsupport/mentalimage.hpp
+   src/onthepitch/AIsupport/ai_adaptive_pipeline.hpp
    src/onthepitch/teamAIcontroller.hpp
    src/onthepitch/proceduralpitch.hpp
 )
@@ -463,6 +473,7 @@ set(GAME_SOURCES
    src/onthepitch/referee.cpp
    src/onthepitch/AIsupport/mentalimage.cpp
    src/onthepitch/AIsupport/AIfunctions.cpp
+   src/onthepitch/AIsupport/ai_adaptive_pipeline.cpp
    src/onthepitch/proceduralpitch.cpp
    src/onthepitch/team.cpp
    src/onthepitch/teamAIcontroller.cpp
@@ -496,6 +507,7 @@ set(MENU_HEADERS
    src/menu/startmatch/matchoptions.hpp
    src/menu/startmatch/loadingmatch.hpp
    src/menu/startmatch/teamselect.hpp
+   src/menu/startmatch/sandbox.hpp
    src/menu/menutask.hpp
    src/menu/settings.hpp
    src/menu/controllerselect.hpp
@@ -530,6 +542,7 @@ set(MENU_SOURCES
    src/menu/startmatch/teamselect.cpp
    src/menu/startmatch/loadingmatch.cpp
    src/menu/startmatch/matchoptions.cpp
+   src/menu/startmatch/sandbox.cpp
    src/menu/visualoptions.cpp
    src/menu/pagefactory.cpp
    src/menu/menutask.cpp

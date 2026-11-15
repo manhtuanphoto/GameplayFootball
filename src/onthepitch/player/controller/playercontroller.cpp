@@ -239,16 +239,27 @@ void PlayerController::_Preprocess() {
 void PlayerController::_KeeperDeflectCommand(PlayerCommandQueue &commandQueue, bool onlyPickupAnims) {
 
   if (CastPlayer()->GetFormationEntry().role != e_PlayerRole_GK) return;
-  if (match->GetBall()->Predict(400).GetDistance(player->GetPosition()) > ballDistanceOptimizeThreshold + 10.0f) return;
+  float minBallDist = std::min(match->GetBall()->Predict(0).GetDistance(player->GetPosition()),
+                               std::min(match->GetBall()->Predict(200).GetDistance(player->GetPosition()),
+                                        match->GetBall()->Predict(400).GetDistance(player->GetPosition())));
+  if (minBallDist > ballDistanceOptimizeThreshold + 12.0f) return;
 
   // can't use hands if teammate intentionally kicked ball to us
   if (match->GetLastTouchTeamID() == team->GetID() && match->GetLastTouchPlayer() != CastPlayer() && match->GetLastTouchTeamID(e_TouchType_Intentional_Kicked) == team->GetID()) return;
 
   if (match->GetBallRetainer() != 0) return;
 
-  // can't use hands outside of keeper's 16 yard box (todo: make precise, probably in humanoid.cpp's getbestcheatableanim)
-  if (fabs(match->GetBall()->Predict(160).coords[1]) > 20.05f) return;
-  if (match->GetBall()->Predict(160).coords[0] * -team->GetSide() > -pitchHalfW + 16.4) return;
+  // Keeper must be in or stepping inside the 16.5m penalty area, and the ball trajectory must enter the box
+  // (exact touch-frame box legality is also enforced in Humanoid::GetBestCheatableAnimID)
+  auto isInsideBox = [&](const Vector3 &p) -> bool {
+    return (fabs(p.coords[1]) <= 20.15f) && (p.coords[0] * -team->GetSide() <= -pitchHalfW + 16.5f);
+  };
+  if (fabs(player->GetPosition().coords[1]) > 20.6f || player->GetPosition().coords[0] * -team->GetSide() > -pitchHalfW + 17.5f) return;
+  if (!isInsideBox(match->GetBall()->Predict(80)) &&
+      !isInsideBox(match->GetBall()->Predict(220)) &&
+      !isInsideBox(match->GetBall()->Predict(380))) {
+    return;
+  }
 
   PlayerCommand command;
   command.desiredFunctionType = e_FunctionType_Deflect;

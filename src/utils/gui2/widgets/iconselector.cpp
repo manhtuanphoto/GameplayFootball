@@ -37,7 +37,7 @@ namespace blunted {
   Gui2IconSelector::~Gui2IconSelector() {
   }
 
-  void Gui2IconSelector::GetImages(std::vector < boost::intrusive_ptr<Image2D> > &target) {
+  void Gui2IconSelector::GetImages(std::vector < blunted::intrusive_ptr<Image2D> > &target) {
     target.push_back(image);
     Gui2View::GetImages(target);
   }
@@ -85,16 +85,16 @@ namespace blunted {
     image->OnChange();
 
     // calculate sizes and positions for each entry
+    float baseIconHeight = 10.5f;
+    float baseIconWidth = baseIconHeight / windowManager->GetAspectRatio();
     for (int i = 0; i < (signed int)entries.size(); i++) {
       float position = i - visibleSelectedEntry;
-      float xpos = width_percent * 0.5;
-      if (position > 0.5 * -pi && position < 0.5 * pi) {
+      float xpos = width_percent * 0.5f;
+      if (position > 0.5f * -pi && position < 0.5f * pi) {
         float size = fabs(cos(position));
-        float width = 8.0 * size;
-        float height = 10.0 * size;
-        xpos += sin(position) * width_percent * 0.4;
+        xpos += sin(position) * width_percent * 0.4f;
         // only resize internals, for speed (no texture recreate)
-        entries.at(i).icon->SetPosition(xpos - 8.0 * 0.5, height_percent * 0.5 - 10.0 * 0.5);
+        entries.at(i).icon->SetPosition(xpos - baseIconWidth * 0.5f, height_percent * 0.5f - baseIconHeight * 0.5f);
         entries.at(i).icon->SetZoom(size, size);
       } else {
         entries.at(i).icon->SetPosition(100, 100);
@@ -106,6 +106,25 @@ namespace blunted {
         selectedCaption->SetCaption(entries.at(selectedEntry).caption);
       }
     } else selectedCaption->SetCaption("None selected");
+  }
+
+  void Gui2IconSelector::SelectEntryByIndex(int index, bool animate) {
+    if (entries.empty()) return;
+    selectedEntry = clamp(index, 0, (int)entries.size() - 1);
+    if (!animate) {
+      visibleSelectedEntry = (float)selectedEntry;
+    }
+    Redraw();
+  }
+
+  bool Gui2IconSelector::SelectEntryByID(const std::string &id, bool animate) {
+    for (int i = 0; i < (int)entries.size(); i++) {
+      if (entries.at(i).id == id) {
+        SelectEntryByIndex(i, animate);
+        return true;
+      }
+    }
+    return false;
   }
 
   void Gui2IconSelector::ClearEntries() {
@@ -126,7 +145,9 @@ namespace blunted {
     Gui2IconSelectorEntry entry;
     entry.caption = caption;
     entry.id = id;
-    entry.icon = new Gui2Image(windowManager, name + "_entry_" + id, 0, 0, 8, 10);
+    float baseIconHeight = 10.5f;
+    float baseIconWidth = baseIconHeight / windowManager->GetAspectRatio();
+    entry.icon = new Gui2Image(windowManager, name + "_entry_" + id, 0, 0, baseIconWidth, baseIconHeight);
     entry.icon->LoadImage(imageFile);
     AddView(entry.icon);
     entry.icon->Show();

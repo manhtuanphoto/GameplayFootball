@@ -28,7 +28,7 @@ namespace blunted {
       Gui2Slider(Gui2WindowManager *windowManager, const std::string &name, float x_percent, float y_percent, float width_percent, float height_percent, const std::string &caption);
       virtual ~Gui2Slider();
 
-      virtual void GetImages(std::vector < boost::intrusive_ptr<Image2D> > &target);
+      virtual void GetImages(std::vector < blunted::intrusive_ptr<Image2D> > &target);
 
       virtual void Process();
       virtual void Redraw();
@@ -49,10 +49,10 @@ namespace blunted {
       void SetHelperValue(int index, float value);
       void DeleteHelperValue(int index);
 
-      boost::signals2::signal<void(Gui2Slider*)> sig_OnChange;
+      blunted::Signal<void(Gui2Slider*)> sig_OnChange;
 
     protected:
-      boost::intrusive_ptr<Image2D> image;
+      blunted::intrusive_ptr<Image2D> image;
 
       int fadeOut_ms;
       int fadeOutTime_ms;

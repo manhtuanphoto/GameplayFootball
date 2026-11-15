@@ -12,7 +12,7 @@ namespace blunted {
   signal_LogCallback callback;
 
   std::ofstream logFile;
-  boost::mutex mutex;
+  std::mutex logMutex;
 
   void LogOpen() {
     logFile.open("log.txt", std::ios::out);
@@ -22,7 +22,7 @@ namespace blunted {
     if (logFile.is_open()) logFile.close();
   }
 
-  boost::signals2::connection BindLog(const signal_LogCallback::slot_type &slot) {
+  SignalConnection BindLog(const signal_LogCallback::slot_type &slot) {
     return callback.connect(slot);
   }
 
@@ -37,25 +37,22 @@ namespace blunted {
     }
 
     char bla[2048];
-    sprintf(bla, "[%s] in [%s::%s]: %s\n", logTypeString.c_str(), className.c_str(), methodName.c_str(), message.c_str());
-    callback(logType, className.c_str(), methodName.c_str(), message.c_str());
+    snprintf(bla, sizeof(bla), "[%s] in [%s::%s]: %s\n", logTypeString.c_str(), className.c_str(), methodName.c_str(), message.c_str());
+    callback(logType, className, methodName, message);
 
-    mutex.lock();
-    printf("%s", bla);
-    if (logFile.is_open()) logFile << bla;
-    logFile.flush();
-    mutex.unlock();
+    {
+      std::lock_guard<std::mutex> lock(logMutex);
+      printf("%s", bla);
+      if (logFile.is_open()) logFile << bla;
+      logFile.flush();
+    }
 
     if (logType == e_FatalError) {
       LogClose();
-
 #ifndef NDEBUG
-      // for gdb backtracing
-      int *foo = (int*)-1; // make a bad pointer
-      printf("%d\n", *foo); // causes segfault
+      std::abort();
 #endif
-
-      exit(1);
+      std::exit(1);
     }
   }
 

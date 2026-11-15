@@ -20,11 +20,11 @@ class Team {
 
     void Exit();
 
-    void InitPlayers(boost::intrusive_ptr<Node> fullbodyNode, std::map<Vector3, Vector3> &colorCoords);
+    void InitPlayers(blunted::intrusive_ptr<Node> fullbodyNode, std::map<Vector3, Vector3> &colorCoords);
 
     Match *GetMatch() { return match; }
     TeamAIController *GetController() { return teamController; }
-    boost::intrusive_ptr<Node> GetSceneNode() { return teamNode; }
+    blunted::intrusive_ptr<Node> GetSceneNode() { return teamNode; }
 
     int GetID() const { return id; }
     signed int GetSide();
@@ -102,8 +102,8 @@ class Team {
     std::vector<Player*> players;
     int activePlayerCount;
 
-    boost::intrusive_ptr<Node> teamNode;
-    boost::intrusive_ptr<Node> playerNode;
+    blunted::intrusive_ptr<Node> teamNode;
+    blunted::intrusive_ptr<Node> playerNode;
 
     std::vector<HumanGamer*> humanGamers;
 
@@ -115,7 +115,7 @@ class Team {
     Player *lastTouchPlayer;
     e_TouchType lastTouchType;
 
-    boost::intrusive_ptr < Resource<Surface> > kit;
+    blunted::intrusive_ptr < Resource<Surface> > kit;
 
 };
 

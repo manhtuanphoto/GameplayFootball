@@ -25,27 +25,52 @@ namespace blunted {
 
   void GraphicsSystem::Initialize(const Properties &config) {
 
-    textureResourceManager = boost::shared_ptr < ResourceManager<Texture> > (new ResourceManager<Texture>("texture"));
-    vertexBufferResourceManager = boost::shared_ptr < ResourceManager<VertexBuffer> > (new ResourceManager<VertexBuffer>("vertexbuffer"));
+    textureResourceManager = std::shared_ptr < ResourceManager<Texture> > (new ResourceManager<Texture>("texture"));
+    vertexBufferResourceManager = std::shared_ptr < ResourceManager<VertexBuffer> > (new ResourceManager<VertexBuffer>("vertexbuffer"));
     ResourceManagerPool::GetInstance().RegisterManager(e_ResourceType_Texture, textureResourceManager);
     ResourceManagerPool::GetInstance().RegisterManager(e_ResourceType_VertexBuffer, vertexBufferResourceManager);
 
-    // start thread for renderer
+    // initialize renderer on the Main Thread (OpenGL context + SDL window affinity)
     if (config.Get("graphics3d_renderer", "opengl") == "opengl") renderer3DTask = new OpenGLRenderer3D();
-    width = config.GetInt("context_x", 1280);
-    height = config.GetInt("context_y", 720);
-    bpp = config.GetInt("context_bpp", 32);
-    bool fullscreen = config.GetBool("context_fullscreen", false);
-    renderer3DTask->Run();
+    renderer3DTask->InitMainThread();
 
-    boost::intrusive_ptr<Renderer3DMessage_CreateContext> createContext(new Renderer3DMessage_CreateContext(width, height, bpp, fullscreen));
+    bool fullscreen = config.GetBool("context_fullscreen", false);
+    bool vsync = config.GetBool("context_vsync", true);
+
+    int defaultW = 1920;
+    int defaultH = 1080;
+    SDL_DisplayMode desktopMode;
+    if (SDL_GetDesktopDisplayMode(0, &desktopMode) == 0 && desktopMode.w > 0 && desktopMode.h > 0) {
+      if (fullscreen) {
+        defaultW = desktopMode.w;
+        defaultH = desktopMode.h;
+      } else if (desktopMode.w > 1920 && desktopMode.h > 1080) {
+        defaultW = 1920;
+        defaultH = 1080;
+      } else if (desktopMode.w >= 1920 && desktopMode.h >= 1080) {
+        defaultW = 1600;
+        defaultH = 900;
+      } else {
+        defaultW = std::min(1280, desktopMode.w);
+        defaultH = std::min(720, desktopMode.h);
+      }
+    }
+
+    width = config.GetInt("context_x", defaultW);
+    height = config.GetInt("context_y", defaultH);
+    bpp = config.GetInt("context_bpp", 32);
+    int aaModeInt = clamp(config.GetInt("context_aa", (int)e_AntiAliasing_FXAA_Quality), 0, 3);
+    renderer3DTask->SetVSync(vsync);
+    renderer3DTask->SetAntiAliasingMode((e_AntiAliasingMode)aaModeInt);
+
+    intrusive_ptr<Renderer3DMessage_CreateContext> createContext(new Renderer3DMessage_CreateContext(width, height, bpp, fullscreen));
     renderer3DTask->messageQueue.PushMessage(createContext);
     createContext->Wait();
 
     if (!createContext->success) {
       Log(e_FatalError, "GraphicsSystem", "Initialize", "Could not create context");
     } else {
-      Log(e_Notice, "GraphicsSystem", "Initialize", "Created context, resolution " + int_to_str(width) + " * " + int_to_str(height) + " @ " + int_to_str(bpp) + " bpp");
+      Log(e_Notice, "GraphicsSystem", "Initialize", "Created context on Main Thread, resolution " + int_to_str(width) + " * " + int_to_str(height) + " @ " + int_to_str(bpp) + " bpp");
     }
 
     task = new GraphicsTask(this);
@@ -54,7 +79,7 @@ namespace blunted {
 
   void GraphicsSystem::Exit() {
     // shutdown system task
-    boost::intrusive_ptr<Message_Shutdown> shutdown(new Message_Shutdown());
+    intrusive_ptr<Message_Shutdown> shutdown(new Message_Shutdown());
     task->messageQueue.PushMessage(shutdown);
     shutdown->Wait();
 
@@ -65,12 +90,8 @@ namespace blunted {
     textureResourceManager.reset();
     vertexBufferResourceManager.reset();
 
-    // shutdown renderer thread
-    boost::intrusive_ptr<Message_Shutdown> R3Dshutdown(new Message_Shutdown());
-    renderer3DTask->messageQueue.PushMessage(R3Dshutdown);
-    R3Dshutdown->Wait();
-
-    renderer3DTask->Join();
+    // shutdown renderer on Main Thread
+    renderer3DTask->ShutdownMainThread();
     delete renderer3DTask;
     renderer3DTask = NULL;
   }
@@ -79,7 +100,7 @@ namespace blunted {
     return systemType;
   }
 
-  ISystemScene *GraphicsSystem::CreateSystemScene(boost::shared_ptr<IScene> scene) {
+  ISystemScene *GraphicsSystem::CreateSystemScene(std::shared_ptr<IScene> scene) {
     if (scene->GetSceneType() == e_SceneType_Scene2D) {
       GraphicsScene *graphicsScene = new GraphicsScene(this);
       scene->Attach(graphicsScene->GetInterpreter(e_SceneType_Scene2D));

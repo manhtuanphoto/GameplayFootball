@@ -15,7 +15,7 @@
 
 namespace blunted {
 
-  ThreadHud::ThreadHud(boost::shared_ptr<Scene2D> scene2D) : scene2D(scene2D) {
+  ThreadHud::ThreadHud(std::shared_ptr<Scene2D> scene2D) : scene2D(scene2D) {
 
     font = TTF_OpenFont("media/blunted/HUD/terminus.fon", 8);
     assert(font);
@@ -42,10 +42,10 @@ namespace blunted {
     int y = contextSize.coords[1] - _height - 10;
 
 
-    graph = boost::static_pointer_cast<Image2D>(ObjectFactory::GetInstance().CreateObject("threadHUD graphic", e_ObjectType_Image2D));
+    graph = blunted::static_pointer_cast<Image2D>(ObjectFactory::GetInstance().CreateObject("threadHUD graphic", e_ObjectType_Image2D));
     scene2D->CreateSystemObjects(graph);
 
-    boost::intrusive_ptr < Resource<Surface> > surface = ResourceManagerPool::GetInstance().GetManager<Surface>(e_ResourceType_Surface)->Fetch("threadHUD graphic", false, false);
+    blunted::intrusive_ptr < Resource<Surface> > surface = ResourceManagerPool::GetInstance().GetManager<Surface>(e_ResourceType_Surface)->Fetch("threadHUD graphic", false, false);
     SDL_Surface *surfaceSDL = CreateSDLSurface(_width, _height);
     surface->GetResource()->SetData(surfaceSDL);
 

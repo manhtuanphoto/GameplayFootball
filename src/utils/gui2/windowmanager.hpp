@@ -23,7 +23,7 @@ namespace blunted {
   class Gui2WindowManager {
 
     public:
-      Gui2WindowManager(boost::shared_ptr<Scene2D> scene2D, float aspectRatio, float margin);
+      Gui2WindowManager(std::shared_ptr<Scene2D> scene2D, float aspectRatio, float margin);
       virtual ~Gui2WindowManager();
 
       void Exit();
@@ -39,9 +39,9 @@ namespace blunted {
       int GetHeightPixels(float percentage);
       float GetWidthPercent(int pixels);
       float GetHeightPercent(int pixels);
-      boost::intrusive_ptr<Image2D> CreateImage2D(const std::string &name, int width, int height, bool sceneRegister = false);
+      blunted::intrusive_ptr<Image2D> CreateImage2D(const std::string &name, int width, int height, bool sceneRegister = false);
       void UpdateImagePosition(Gui2View *view) const;
-      void RemoveImage(boost::intrusive_ptr<Image2D> image) const;
+      void RemoveImage(blunted::intrusive_ptr<Image2D> image) const;
 
       void BlackoutBackground(bool onOff);
 
@@ -63,14 +63,17 @@ namespace blunted {
       Gui2PageFactory *GetPageFactory() { return pageFactory; }
       Gui2PagePath *GetPagePath() { return pagePath; }
 
+      void MarkZPriorityDirty() { zPriorityDirty = true; }
+      void UpdateZPriorityIfNeeded();
+
     protected:
-      boost::shared_ptr<Scene2D> scene2D;
+      std::shared_ptr<Scene2D> scene2D;
       float aspectRatio;
       float margin;
       float effectiveW;
       float effectiveH;
 
-      boost::intrusive_ptr<Image2D> blackoutBackground;
+      blunted::intrusive_ptr<Image2D> blackoutBackground;
 
       Gui2Root *root;
       Gui2View *focus;
@@ -83,6 +86,7 @@ namespace blunted {
 
       Gui2PageFactory *pageFactory;
       Gui2PagePath *pagePath;
+      bool zPriorityDirty = true;
 
   };
 

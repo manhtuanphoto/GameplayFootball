@@ -33,20 +33,20 @@ namespace blunted {
     //printf("EXITING GFX SCENE\n");
   //}
 
-  boost::intrusive_ptr<ISceneInterpreter> GraphicsScene::GetInterpreter(e_SceneType sceneType) {
+  blunted::intrusive_ptr<ISceneInterpreter> GraphicsScene::GetInterpreter(e_SceneType sceneType) {
     if (sceneType == e_SceneType_Scene2D) {
-      boost::intrusive_ptr<GraphicsScene_Scene2DInterpreter> scene2DInterpreter(new GraphicsScene_Scene2DInterpreter(this));
+      blunted::intrusive_ptr<GraphicsScene_Scene2DInterpreter> scene2DInterpreter(new GraphicsScene_Scene2DInterpreter(this));
       return scene2DInterpreter;
     }
     if (sceneType == e_SceneType_Scene3D) {
-      boost::intrusive_ptr<GraphicsScene_Scene3DInterpreter> scene3DInterpreter(new GraphicsScene_Scene3DInterpreter(this));
+      blunted::intrusive_ptr<GraphicsScene_Scene3DInterpreter> scene3DInterpreter(new GraphicsScene_Scene3DInterpreter(this));
       return scene3DInterpreter;
     }
     Log(e_FatalError, "GraphicsScene", "GetInterpreter", "No appropriate interpreter found for this SceneType");
-    return boost::intrusive_ptr<GraphicsScene_Scene3DInterpreter>();
+    return blunted::intrusive_ptr<GraphicsScene_Scene3DInterpreter>();
   }
 
-  ISystemObject *GraphicsScene::CreateSystemObject(boost::intrusive_ptr<Object> object) {
+  ISystemObject *GraphicsScene::CreateSystemObject(blunted::intrusive_ptr<Object> object) {
     assert(object.get());
 
     // todo: system scene shouldn't know about object types, i guess? maybe via a Command
@@ -93,7 +93,7 @@ namespace blunted {
     caller = 0;
   }
 
-  ISystemObject *GraphicsScene_Scene3DInterpreter::CreateSystemObject(boost::intrusive_ptr<Object> object) {
+  ISystemObject *GraphicsScene_Scene3DInterpreter::CreateSystemObject(blunted::intrusive_ptr<Object> object) {
     return caller->CreateSystemObject(object);
   }
 
@@ -111,7 +111,7 @@ namespace blunted {
     caller = 0;
   }
 
-  ISystemObject *GraphicsScene_Scene2DInterpreter::CreateSystemObject(boost::intrusive_ptr<Object> object) {
+  ISystemObject *GraphicsScene_Scene2DInterpreter::CreateSystemObject(blunted::intrusive_ptr<Object> object) {
     return caller->CreateSystemObject(object);
   }
 

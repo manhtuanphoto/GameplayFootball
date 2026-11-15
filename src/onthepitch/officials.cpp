@@ -17,9 +17,9 @@
 
 #include "../main.hpp"
 
-Officials::Officials(Match *match, boost::intrusive_ptr<Node> fullbodySourceNode, std::map<Vector3, Vector3> &colorCoords, boost::intrusive_ptr < Resource<Surface> > kit, boost::shared_ptr<AnimCollection> animCollection) : match(match) {
+Officials::Officials(Match *match, blunted::intrusive_ptr<Node> fullbodySourceNode, std::map<Vector3, Vector3> &colorCoords, blunted::intrusive_ptr < Resource<Surface> > kit, std::shared_ptr<AnimCollection> animCollection) : match(match) {
   ObjectLoader loader;
-  boost::intrusive_ptr<Node> playerNode = loader.LoadObject(GetScene3D(), "media/objects/players/player.object");
+  blunted::intrusive_ptr<Node> playerNode = loader.LoadObject(GetScene3D(), "media/objects/players/player.object");
   playerNode->SetName("player");
   playerNode->SetLocalMode(e_LocalMode_Absolute);
 
@@ -38,7 +38,7 @@ Officials::Officials(Match *match, boost::intrusive_ptr<Node> fullbodySourceNode
   linesmen[0]->CastHumanoid()->ResetPosition(Vector3(25, -36.5, 0), Vector3(0));
   linesmen[1]->CastHumanoid()->ResetPosition(Vector3(-25, 36.5, 0), Vector3(0));
 
-  boost::intrusive_ptr < Resource<GeometryData> > geometry = ResourceManagerPool::GetInstance().GetManager<GeometryData>(e_ResourceType_GeometryData)->Fetch("media/objects/officials/yellowcard.ase", true);
+  blunted::intrusive_ptr < Resource<GeometryData> > geometry = ResourceManagerPool::GetInstance().GetManager<GeometryData>(e_ResourceType_GeometryData)->Fetch("media/objects/officials/yellowcard.ase", true);
   yellowCard = static_pointer_cast<Geometry>(ObjectFactory::GetInstance().CreateObject("yellowcard", e_ObjectType_Geometry));
   GetScene3D()->CreateSystemObjects(yellowCard);
   yellowCard->SetGeometryData(geometry);
@@ -100,9 +100,9 @@ void Officials::Put() {
     if (referee->GetCurrentAnim()->anim->GetName().find("mirror") != std::string::npos) bodyPartName = "left_elbow";
 
     const NodeMap &nodeMap = referee->GetNodeMap();
-    std::map < const std::string, boost::intrusive_ptr<Node> >::const_iterator bodyPartIter = nodeMap.find(bodyPartName);
+    std::map < const std::string, blunted::intrusive_ptr<Node> >::const_iterator bodyPartIter = nodeMap.find(bodyPartName);
     if (bodyPartIter != nodeMap.end()) {
-      boost::intrusive_ptr<Spatial> bodyPart = bodyPartIter->second;
+      blunted::intrusive_ptr<Spatial> bodyPart = bodyPartIter->second;
       Vector3 position = bodyPart->GetDerivedPosition() + bodyPart->GetDerivedRotation() * Vector3(0.04, 0, -0.25); // -0.4
       if (match->GetReferee()->GetCurrentFoulType() == 2) {
         yellowCard->SetPosition(position);

@@ -3,6 +3,7 @@
 // i do not offer support, so don't ask. to be used for inspiration :)
 
 #include <cmath>
+#include <atomic>
 #include "humanoid.hpp"
 
 #include "humanoid_utils.hpp"
@@ -24,7 +25,116 @@ const float bodyRotationSmoothingFactor = 1.0f;
 const float bodyRotationSmoothingMaxAngle = 0.25f * pi;
 const float initialReQueueDelayFrames = 32;
 
-void FillTemporalHumanoidNodes(boost::intrusive_ptr<Node> targetNode, std::vector<TemporalHumanoidNode> &temporalHumanoidNodes) {
+static std::atomic<bool> g_proceduralIKEnabled{true};
+
+bool IsProceduralIKEnabled() {
+  return g_proceduralIKEnabled.load(std::memory_order_relaxed);
+}
+
+void SetProceduralIKEnabled(bool enabled) {
+  g_proceduralIKEnabled.store(enabled, std::memory_order_relaxed);
+}
+
+namespace {
+
+Quaternion ShortestArcQuat(const Vector3 &fromUnit, const Vector3 &toUnit) {
+  float d = clamp(fromUnit.GetDotProduct(toUnit), -1.0f, 1.0f);
+  if (d > 0.99999f) {
+    return Quaternion(QUATERNION_IDENTITY);
+  }
+  if (d < -0.9999f) {
+    Vector3 fallback = (fabs(fromUnit.coords[0]) < 0.9f) ? Vector3(1, 0, 0) : Vector3(0, 1, 0);
+    Vector3 ortho = fallback.GetCrossProduct(fromUnit).GetNormalized(Vector3(1, 0, 0));
+    Quaternion q;
+    q.SetAngleAxis(pi, ortho);
+    return q.GetNormalized();
+  }
+  Vector3 axis = fromUnit.GetCrossProduct(toUnit);
+  axis.Normalize(Vector3(1, 0, 0));
+  Quaternion q;
+  q.SetAngleAxis(std::acos(d), axis);
+  return q.GetNormalized();
+}
+
+void SolveTwoBoneLegIK(Node *thighNode, Node *kneeNode, Node *ankleNode,
+                       const Vector3 &targetSkelPos, float weight, float plantFlattenWeight) {
+  if (weight <= 0.0005f || !thighNode || !kneeNode || !ankleNode) return;
+
+  weight = clamp(weight, 0.0f, 1.0f);
+
+  Quaternion rawThighLocal = thighNode->GetRotation();
+  Quaternion rawKneeLocal = kneeNode->GetRotation();
+  Quaternion rawAnkleLocal = ankleNode->GetRotation();
+  Quaternion origAnkleWorld = ankleNode->GetDerivedRotation();
+
+  Vector3 hipPos = thighNode->GetDerivedPosition();
+  Vector3 kneePos = kneeNode->GetDerivedPosition();
+  Vector3 anklePos = ankleNode->GetDerivedPosition();
+
+  float L1 = (kneePos - hipPos).GetLength();
+  float L2 = (anklePos - kneePos).GetLength();
+  if (L1 < 0.05f || L2 < 0.05f) return;
+
+  Vector3 toTarget = targetSkelPos - hipPos;
+  float targetDist = toTarget.GetLength();
+  if (targetDist < 0.001f) return;
+
+  float minReach = 0.28f * (L1 + L2);
+  float maxReach = 0.994f * (L1 + L2);
+  float clampedDist = clamp(targetDist, minReach, maxReach);
+  Vector3 goalPos = hipPos + (toTarget / targetDist) * clampedDist;
+
+  // Step 1: Exact Law of Cosines on anatomical X-axis knee hinge
+  Vector3 ankleLocalOffset = ankleNode->GetPosition(); // (0, -0.04, -0.44)
+  radian delta0 = std::atan2(-ankleLocalOffset.coords[1], -ankleLocalOffset.coords[2]);
+  float cosGamma = clamp((L1 * L1 + L2 * L2 - clampedDist * clampedDist) / (2.0f * L1 * L2), -1.0f, 1.0f);
+  radian gamma = std::acos(cosGamma);
+  radian kneeAngleX = clamp((pi - gamma) + delta0, 0.03f, 0.82f * pi);
+
+  Quaternion ikKneeLocal;
+  ikKneeLocal.SetAngleAxis(kneeAngleX, Vector3(1, 0, 0));
+
+  Quaternion thighWorldRot = thighNode->GetDerivedRotation();
+  Quaternion bentKneeWorldRot = (thighWorldRot * ikKneeLocal).GetNormalized();
+  Vector3 bentAnklePos = kneePos + bentKneeWorldRot * (kneeNode->GetDerivedScale() * ankleLocalOffset);
+
+  // Step 2: Shortest-arc swing on thigh so hip->ankle aligns with hip->goalPos
+  Vector3 curDir = (bentAnklePos - hipPos).GetNormalized(Vector3(0, 0, -1));
+  Vector3 desDir = (goalPos - hipPos).GetNormalized(curDir);
+  Quaternion qSwing = ShortestArcQuat(curDir, desDir);
+
+  Spatial *thighParent = thighNode->GetParent();
+  Quaternion parentWorldRot = thighParent ? thighParent->GetDerivedRotation() : Quaternion(QUATERNION_IDENTITY);
+  Quaternion ikThighLocal = (parentWorldRot.GetInverse() * qSwing * thighWorldRot).GetNormalized();
+  Quaternion ikThighWorldRot = (parentWorldRot * ikThighLocal).GetNormalized();
+  Quaternion ikKneeWorldRot = (ikThighWorldRot * ikKneeLocal).GetNormalized();
+
+  // Step 3: Preserve foot yaw and optionally flatten planted cleat parallel to turf
+  Quaternion targetAnkleWorld = origAnkleWorld;
+  if (plantFlattenWeight > 0.001f) {
+    Vector3 footUp = (origAnkleWorld * Vector3(0, 0, 1)).GetNormalized(Vector3(0, 0, 1));
+    Quaternion qFlat = ShortestArcQuat(footUp, Vector3(0, 0, 1));
+    Quaternion flatAnkleWorld = (qFlat * origAnkleWorld).GetNormalized();
+    targetAnkleWorld = origAnkleWorld.GetSlerped(clamp(plantFlattenWeight, 0.0f, 1.0f), flatAnkleWorld).GetNormalized();
+  }
+  Quaternion ikAnkleLocal = (ikKneeWorldRot.GetInverse() * targetAnkleWorld).GetNormalized();
+
+  // Step 4: Smooth SLERP blend for continuous lock-in / toe-off transitions
+  if (weight < 0.999f) {
+    thighNode->SetRotation(rawThighLocal.GetSlerped(weight, ikThighLocal).GetNormalized(), false);
+    kneeNode->SetRotation(rawKneeLocal.GetSlerped(weight, ikKneeLocal).GetNormalized(), false);
+    ankleNode->SetRotation(rawAnkleLocal.GetSlerped(weight, ikAnkleLocal).GetNormalized(), false);
+  } else {
+    thighNode->SetRotation(ikThighLocal, false);
+    kneeNode->SetRotation(ikKneeLocal, false);
+    ankleNode->SetRotation(ikAnkleLocal, false);
+  }
+  thighNode->RecursiveUpdateSpatialData(e_SpatialDataType_Both);
+}
+
+} // namespace
+
+void FillTemporalHumanoidNodes(blunted::intrusive_ptr<Node> targetNode, std::vector<TemporalHumanoidNode> &temporalHumanoidNodes) {
   //printf("%s\n", targetNode->GetName().c_str());
   TemporalHumanoidNode temporalHumanoidNode;
   temporalHumanoidNode.actualNode = targetNode;
@@ -35,7 +145,7 @@ void FillTemporalHumanoidNodes(boost::intrusive_ptr<Node> targetNode, std::vecto
   temporalHumanoidNode.orientation.SetValue(targetNode->GetRotation(), EnvironmentManager::GetInstance().GetTime_ms());
   temporalHumanoidNodes.push_back(temporalHumanoidNode);
 
-  std::vector < boost::intrusive_ptr<Node> > gatherNodes;
+  std::vector < blunted::intrusive_ptr<Node> > gatherNodes;
   targetNode->GetNodes(gatherNodes);
   for (unsigned int i = 0; i < gatherNodes.size(); i++) {
     FillTemporalHumanoidNodes(gatherNodes.at(i), temporalHumanoidNodes);
@@ -43,7 +153,7 @@ void FillTemporalHumanoidNodes(boost::intrusive_ptr<Node> targetNode, std::vecto
 
 }
 
-HumanoidBase::HumanoidBase(PlayerBase *player, Match *match, boost::intrusive_ptr<Node> humanoidSourceNode, boost::intrusive_ptr<Node> fullbodySourceNode, std::map<Vector3, Vector3> &colorCoords, boost::shared_ptr<AnimCollection> animCollection, boost::intrusive_ptr<Node> fullbodyTargetNode, boost::intrusive_ptr < Resource<Surface> > kit, int bodyUpdatePhaseOffset) : fullbodyTargetNode(fullbodyTargetNode), match(match), player(player), anims(animCollection), buf_bodyUpdatePhaseOffset(bodyUpdatePhaseOffset) {
+HumanoidBase::HumanoidBase(PlayerBase *player, Match *match, blunted::intrusive_ptr<Node> humanoidSourceNode, blunted::intrusive_ptr<Node> fullbodySourceNode, std::map<Vector3, Vector3> &colorCoords, std::shared_ptr<AnimCollection> animCollection, blunted::intrusive_ptr<Node> fullbodyTargetNode, blunted::intrusive_ptr < Resource<Surface> > kit, int bodyUpdatePhaseOffset) : fullbodyTargetNode(fullbodyTargetNode), match(match), player(player), anims(animCollection), buf_bodyUpdatePhaseOffset(bodyUpdatePhaseOffset) {
 
   interruptAnim = e_InterruptAnim_None;
   reQueueDelayFrames = 0;
@@ -101,23 +211,23 @@ HumanoidBase::HumanoidBase(PlayerBase *player, Match *match, boost::intrusive_pt
   float playerHeight = player->GetPlayerData()->GetHeight();
   zMultiplier = (1.0f / defaultPlayerHeight) * playerHeight;
 
-  boost::intrusive_ptr<Node> bla(new Node(*humanoidSourceNode.get(), "", GetScene3D()));
+  blunted::intrusive_ptr<Node> bla(new Node(*humanoidSourceNode.get(), "", GetScene3D()));
   humanoidNode = bla;
   humanoidNode->SetLocalMode(e_LocalMode_Absolute);
 
-  boost::intrusive_ptr < Resource<Surface> > skin;
+  blunted::intrusive_ptr < Resource<Surface> > skin;
   skin = ResourceManagerPool::GetInstance().GetManager<Surface>(e_ResourceType_Surface)->Fetch("media/objects/players/textures/skin0" + int_to_str(player->GetPlayerData()->GetSkinColor()) + ".png", true, true);
 
-  boost::intrusive_ptr<Node> bla2(new Node(*fullbodySourceNode.get(), int_to_str(player->GetID()), GetScene3D()));
+  blunted::intrusive_ptr<Node> bla2(new Node(*fullbodySourceNode.get(), int_to_str(player->GetID()), GetScene3D()));
   fullbodyNode = bla2;
   fullbodyNode->SetLocalMode(e_LocalMode_Absolute);
   fullbodyTargetNode->AddNode(fullbodyNode);
 
-  boost::intrusive_ptr< Resource<GeometryData> > bodyGeom = boost::static_pointer_cast<Geometry>(fullbodyNode->GetObject("fullbody"))->GetGeometryData();
+  blunted::intrusive_ptr< Resource<GeometryData> > bodyGeom = blunted::static_pointer_cast<Geometry>(fullbodyNode->GetObject("fullbody"))->GetGeometryData();
   bodyGeom->resourceMutex.lock();
   std::vector < MaterializedTriangleMesh > &tmesh = bodyGeom->GetResource()->GetTriangleMeshesRef();
   for (unsigned int i = 0; i < tmesh.size(); i++) {
-    if (tmesh.at(i).material.diffuseTexture != boost::intrusive_ptr< Resource<Surface> >()) {
+    if (tmesh.at(i).material.diffuseTexture != blunted::intrusive_ptr< Resource<Surface> >()) {
       if (tmesh.at(i).material.diffuseTexture->GetIdentString() == "skin.jpg") {
         tmesh.at(i).material.diffuseTexture = skin;
         tmesh.at(i).material.specular_amount = 0.002f;
@@ -127,7 +237,7 @@ HumanoidBase::HumanoidBase(PlayerBase *player, Match *match, boost::intrusive_pt
   }
   bodyGeom->resourceMutex.unlock();
 
-  boost::static_pointer_cast<Geometry>(fullbodyNode->GetObject("fullbody"))->OnUpdateGeometryData();
+  blunted::static_pointer_cast<Geometry>(fullbodyNode->GetObject("fullbody"))->OnUpdateGeometryData();
 
   kitDiffuseTextureIdentString = "kit_template.png";
   SetKit(kit);
@@ -135,8 +245,23 @@ HumanoidBase::HumanoidBase(PlayerBase *player, Match *match, boost::intrusive_pt
 
   scene3D = GetScene3D();
 
+  fullbodyGeometry = blunted::static_pointer_cast<Geometry>(fullbodyNode->GetObject("fullbody"));
+  boneMatricesScratch.assign(16, Matrix4(MATRIX4_IDENTITY));
+
   FillNodeMap(humanoidNode, nodeMap);
   FillTemporalHumanoidNodes(humanoidNode, buf_TemporalHumanoidNodes);
+
+  auto findNodePtr = [&](const char *n) -> Node* {
+    NodeMap::iterator it = nodeMap.find(n);
+    return (it != nodeMap.end()) ? it->second.get() : nullptr;
+  };
+  ikLeftThigh  = findNodePtr("left_thigh");
+  ikLeftKnee   = findNodePtr("left_knee");
+  ikLeftAnkle  = findNodePtr("left_ankle");
+  ikRightThigh = findNodePtr("right_thigh");
+  ikRightKnee  = findNodePtr("right_knee");
+  ikRightAnkle = findNodePtr("right_ankle");
+  ikBody       = findNodePtr("body");
 
   PrepareFullbodyModel(colorCoords);
   buf_bodyUpdatePhase = 0;
@@ -144,7 +269,7 @@ HumanoidBase::HumanoidBase(PlayerBase *player, Match *match, boost::intrusive_pt
 
   // hairstyle
 
-  boost::intrusive_ptr < Resource<GeometryData> > geometry = ResourceManagerPool::GetInstance().GetManager<GeometryData>(e_ResourceType_GeometryData)->Fetch("media/objects/players/hairstyles/" + player->GetPlayerData()->GetHairStyle() + ".ase", true, true);
+  blunted::intrusive_ptr < Resource<GeometryData> > geometry = ResourceManagerPool::GetInstance().GetManager<GeometryData>(e_ResourceType_GeometryData)->Fetch("media/objects/players/hairstyles/" + player->GetPlayerData()->GetHairStyle() + ".ase", true, true);
   hairStyle = static_pointer_cast<Geometry>(ObjectFactory::GetInstance().CreateObject("hairstyle", e_ObjectType_Geometry));
 
   scene3D->CreateSystemObjects(hairStyle);
@@ -152,13 +277,13 @@ HumanoidBase::HumanoidBase(PlayerBase *player, Match *match, boost::intrusive_pt
   hairStyle->SetGeometryData(geometry);
   fullbodyTargetNode->AddObject(hairStyle);
 
-  boost::intrusive_ptr < Resource<Surface> > hairTexture;
+  blunted::intrusive_ptr < Resource<Surface> > hairTexture;
   hairTexture = ResourceManagerPool::GetInstance().GetManager<Surface>(e_ResourceType_Surface)->Fetch("media/objects/players/textures/hair/" + player->GetPlayerData()->GetHairColor() + ".png", true, true);
 
   std::vector < MaterializedTriangleMesh > &hairtmesh = hairStyle->GetGeometryData()->GetResource()->GetTriangleMeshesRef();
 
   for (unsigned int i = 0; i < hairtmesh.size(); i++) {
-    if (hairtmesh.at(i).material.diffuseTexture != boost::intrusive_ptr<Resource <Surface> >()) {
+    if (hairtmesh.at(i).material.diffuseTexture != blunted::intrusive_ptr<Resource <Surface> >()) {
       hairtmesh.at(i).material.diffuseTexture = hairTexture;
       hairtmesh.at(i).material.specular_amount = 0.01f;
       hairtmesh.at(i).material.shininess = 0.05f;
@@ -217,7 +342,7 @@ void HumanoidBase::PrepareFullbodyModel(std::map<Vector3, Vector3> &colorCoords)
   animApplyBuffer.orientation = 0;
   animApplyBuffer.offsets.clear();
   animApplyBuffer.anim->Apply(nodeMap, animApplyBuffer.frameNum, 0, animApplyBuffer.smooth, animApplyBuffer.smoothFactor, animApplyBuffer.position, animApplyBuffer.orientation, animApplyBuffer.offsets, 0, false, true);
-  std::vector < boost::intrusive_ptr<Node> > jointsVec;
+  std::vector < blunted::intrusive_ptr<Node> > jointsVec;
   humanoidNode->GetNodes(jointsVec, true);
 
 
@@ -230,11 +355,79 @@ void HumanoidBase::PrepareFullbodyModel(std::map<Vector3, Vector3> &colorCoords)
     joints.push_back(joint);
   }
 
-  boost::intrusive_ptr < Resource<GeometryData> > fullbodyGeometryData = boost::static_pointer_cast<Geometry>(fullbodyNode->GetObject("fullbody"))->GetGeometryData();
+  blunted::intrusive_ptr < Resource<GeometryData> > fullbodyGeometryData = blunted::static_pointer_cast<Geometry>(fullbodyNode->GetObject("fullbody"))->GetGeometryData();
   fullbodyGeometryData->resourceMutex.lock();
   std::vector < MaterializedTriangleMesh > &materializedTriangleMeshes = fullbodyGeometryData->GetResource()->GetTriangleMeshesRef();
 
   fullbodySubgeomCount = materializedTriangleMeshes.size();
+  bool hasPrebuiltSkinData = (fullbodySubgeomCount > 0 && !materializedTriangleMeshes.at(0).skinData.empty());
+
+  if (hasPrebuiltSkinData) {
+    // Native glTF / GLB skinned character path: mesh is already indexed, in Straight Bind Pose, and carries skinData
+    for (unsigned int subgeom = 0; subgeom < fullbodySubgeomCount; subgeom++) {
+      MaterializedTriangleMesh &subMesh = materializedTriangleMeshes.at(subgeom);
+      int elementOffset = subMesh.verticesDataSize / GetTriangleMeshElementCount();
+      int vertexCount = elementOffset / 3;
+
+      for (int c = 0; c < elementOffset; c++) {
+        subMesh.vertices[c] *= zMultiplier;
+      }
+
+      FloatArray uniqueMesh;
+      uniqueMesh.size = subMesh.verticesDataSize;
+      uniqueMesh.data = new float[uniqueMesh.size];
+      memcpy(uniqueMesh.data, subMesh.vertices, uniqueMesh.size * sizeof(float));
+      uniqueFullbodyMesh.push_back(uniqueMesh);
+
+      std::vector<WeightedVertex> weightedVertexVector;
+      weightedVertexVector.reserve(vertexCount);
+      for (int v = 0; v < vertexCount; v++) {
+        WeightedVertex wv;
+        wv.vertexID = v;
+        if ((size_t)(v * 8 + 7) < subMesh.skinData.size()) {
+          for (int b = 0; b < 4; b++) {
+            float w = subMesh.skinData[v * 8 + 4 + b];
+            if (w > 0.001f) {
+              WeightedBone wb;
+              wb.jointID = clamp((int)round(subMesh.skinData[v * 8 + b]), 0, (int)joints.size() - 1);
+              wb.weight = w;
+              wv.bones.push_back(wb);
+            }
+          }
+        }
+        if (wv.bones.empty()) {
+          WeightedBone wb = { 0, 1.0f };
+          wv.bones.push_back(wb);
+        }
+        weightedVertexVector.push_back(wv);
+      }
+      weightedVerticesVec.push_back(weightedVertexVector);
+    }
+
+    fullbodyGeometryData->GetResource()->SetDynamic(false);
+    fullbodyGeometryData->resourceMutex.unlock();
+
+    Animation *straightAnim = new Animation();
+    straightAnim->Load("media/animations/straight.anim.util");
+    animApplyBuffer.anim = straightAnim;
+    animApplyBuffer.anim->Apply(nodeMap, animApplyBuffer.frameNum, 0, animApplyBuffer.smooth, animApplyBuffer.smoothFactor, animApplyBuffer.position, animApplyBuffer.orientation, animApplyBuffer.offsets, 0, false, true);
+
+    for (unsigned int i = 0; i < joints.size(); i++) {
+      joints.at(i).orientation = Quaternion(QUATERNION_IDENTITY);
+      joints.at(i).position = jointsVec[i]->GetDerivedPosition();
+      joints.at(i).origPos = jointsVec[i]->GetDerivedPosition();
+    }
+
+    blunted::intrusive_ptr<Geometry> fullbodyGeom = blunted::static_pointer_cast<Geometry>(fullbodyNode->GetObject("fullbody"));
+    fullbodyGeom->OnUpdateGeometryData(true);
+
+    std::vector<Matrix4> initBoneMatrices(16, Matrix4(MATRIX4_IDENTITY));
+    fullbodyGeom->SetBoneMatrices(initBoneMatrices);
+
+    delete straightAnim;
+    delete baseAnim;
+    return;
+  }
 
   for (unsigned int subgeom = 0; subgeom < fullbodySubgeomCount; subgeom++) {
 
@@ -357,20 +550,42 @@ void HumanoidBase::PrepareFullbodyModel(std::map<Vector3, Vector3> &colorCoords)
       materializedTriangleMeshes.at(subgeom).indices.push_back(uniqueIndices[v / 3]);
     }
 
-/*
-    printf("\n");
-    printf("optimized: ");
-    for (int i = 0; i < elementOffset; i += 3) {
-      printf("%f, ", materializedTriangleMeshes.at(subgeom).vertices[uniqueIndices[i / 3] * 3 + uniqueElementOffset * 2]);
+    // Build GPU skinning vertex attributes (4 bone indices + 4 normalized weights per unique vertex)
+    const std::vector<WeightedVertex> &subWeightedVerts = weightedVerticesVec.at(subgeom);
+    std::vector<float> &subSkinData = materializedTriangleMeshes.at(subgeom).skinData;
+    subSkinData.clear();
+    subSkinData.resize(subWeightedVerts.size() * 8, 0.0f);
+    for (size_t uv = 0; uv < subWeightedVerts.size(); uv++) {
+      float idx[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+      float wgt[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+      float wSum = 0.0f;
+      size_t boneCount = subWeightedVerts[uv].bones.size();
+      if (boneCount > 4) boneCount = 4;
+      for (size_t b = 0; b < boneCount; b++) {
+        idx[b] = (float)subWeightedVerts[uv].bones[b].jointID;
+        wgt[b] = subWeightedVerts[uv].bones[b].weight;
+        wSum += wgt[b];
+      }
+      if (wSum > 0.0001f) {
+        for (size_t b = 0; b < 4; b++) wgt[b] /= wSum;
+      } else {
+        wgt[0] = 1.0f;
+      }
+      subSkinData[uv * 8 + 0] = idx[0];
+      subSkinData[uv * 8 + 1] = idx[1];
+      subSkinData[uv * 8 + 2] = idx[2];
+      subSkinData[uv * 8 + 3] = idx[3];
+      subSkinData[uv * 8 + 4] = wgt[0];
+      subSkinData[uv * 8 + 5] = wgt[1];
+      subSkinData[uv * 8 + 6] = wgt[2];
+      subSkinData[uv * 8 + 7] = wgt[3];
     }
-    printf("\n");
-    printf("\n");
-*/
 
   } // subgeom
 
+  // Mesh stays in static Straight Bind Pose on GPU; skinning runs in vertex shader
+  fullbodyGeometryData->GetResource()->SetDynamic(false);
   fullbodyGeometryData->resourceMutex.unlock();
-  boost::static_pointer_cast<Geometry>(fullbodyNode->GetObject("fullbody"))->OnUpdateGeometryData();
 
   for (unsigned int i = 0; i < joints.size(); i++) {
     joints.at(i).orientation = jointsVec[i]->GetDerivedRotation().GetInverse().GetNormalized();
@@ -387,12 +602,17 @@ void HumanoidBase::PrepareFullbodyModel(std::map<Vector3, Vector3> &colorCoords)
 
   if (Verbose()) printf("6\n");
 
+  // Bake Straight Bind Pose once on CPU and upload static VBO + skinning attributes
   UpdateFullbodyModel(true);
-  boost::static_pointer_cast<Geometry>(fullbodyNode->GetObject("fullbody"))->OnUpdateGeometryData(false);
+  blunted::intrusive_ptr<Geometry> fullbodyGeom = blunted::static_pointer_cast<Geometry>(fullbodyNode->GetObject("fullbody"));
+  fullbodyGeom->OnUpdateGeometryData(true);
 
   for (unsigned int i = 0; i < joints.size(); i++) {
     joints.at(i).origPos = jointsVec[i]->GetDerivedPosition();
   }
+
+  std::vector<Matrix4> initBoneMatrices(16, Matrix4(MATRIX4_IDENTITY));
+  fullbodyGeom->SetBoneMatrices(initBoneMatrices);
 
   delete straightAnim;
   delete baseAnim;
@@ -402,32 +622,32 @@ void HumanoidBase::PrepareFullbodyModel(std::map<Vector3, Vector3> &colorCoords)
 
 void HumanoidBase::UpdateFullbodyNodes() {
 
-  Vector3 previousFullbodyOffset = fullbodyOffset;
   fullbodyOffset = humanoidNode->GetPosition().Get2D();
   fullbodyNode->SetPosition(fullbodyOffset);
+
+  if (boneMatricesScratch.size() != 16) {
+    boneMatricesScratch.assign(16, Matrix4(MATRIX4_IDENTITY));
+  }
+  unsigned int boneCount = joints.size() < 16 ? (unsigned int)joints.size() : 16;
 
   for (unsigned int i = 0; i < joints.size(); i++) {
     joints[i].orientation = joints[i].node->GetDerivedRotation();
     joints[i].position = joints[i].node->GetDerivedPosition() - fullbodyOffset;
+    if (i < boneCount) {
+      Vector3 rotatedOrig = joints[i].orientation * joints[i].origPos;
+      Vector3 boneTrans = (joints[i].position - rotatedOrig) * zMultiplier;
+      boneMatricesScratch[i].Construct(boneTrans, Vector3(1.0f, 1.0f, 1.0f), joints[i].orientation);
+    }
+  }
+  for (unsigned int i = boneCount; i < 16; i++) {
+    boneMatricesScratch[i] = Matrix4(MATRIX4_IDENTITY);
   }
 
-  // todo: something is wrong with the hairdo update logic, so just always update now
-  /*
-  if (NeedsModelUpdate()) {
-    hairStyle->SetRotation(joints[2].orientation, false);
-    hairStyle->SetPosition(joints[2].position * zMultiplier + fullbodyOffset, false);
-    hairStyle->RecursiveUpdateSpatialData(e_SpatialDataType_Both);
-  } else {
-    hairStyle->SetPosition(hairStyle->GetPosition() + (fullbodyOffset - previousFullbodyOffset), false);
-    hairStyle->RecursiveUpdateSpatialData(e_SpatialDataType_Both);
-  }
-  */
+  fullbodyGeometry->SetBoneMatrices(boneMatricesScratch);
+
   hairStyle->SetRotation(joints[2].orientation, false);
   hairStyle->SetPosition(joints[2].position * zMultiplier + fullbodyOffset, false);
   hairStyle->RecursiveUpdateSpatialData(e_SpatialDataType_Both);
-
-  //hairStyle->SetRotation(nodeMap.find("neck")->second->GetDerivedRotation());
-  //hairStyle->SetPosition(nodeMap.find("neck")->second->GetDerivedPosition() + joints[2].orientation * Vector3(0, 0, player->GetPlayerData()->GetHeight() - defaultPlayerHeight));
 }
 
 bool HumanoidBase::NeedsModelUpdate() {
@@ -441,7 +661,7 @@ void HumanoidBase::UpdateFullbodyModel(bool updateSrc) {
   int uploadTangents = true;
   int uploadBitangents = true;
 
-  boost::intrusive_ptr < Resource<GeometryData> > fullbodyGeometryData = boost::static_pointer_cast<Geometry>(fullbodyNode->GetObject("fullbody"))->GetGeometryData();
+  blunted::intrusive_ptr < Resource<GeometryData> > fullbodyGeometryData = blunted::static_pointer_cast<Geometry>(fullbodyNode->GetObject("fullbody"))->GetGeometryData();
   fullbodyGeometryData->resourceMutex.lock();
   std::vector < MaterializedTriangleMesh > &materializedTriangleMeshes = fullbodyGeometryData->GetResource()->GetTriangleMeshesRef();
 
@@ -562,7 +782,7 @@ void HumanoidBase::UpdateFullbodyModel(bool updateSrc) {
 
 /* moved this to gametask upload thread, so it can be multithreaded, whilst assuring its lifetime
 void HumanoidBase::UploadFullbodyModel() {
-  boost::static_pointer_cast<Geometry>(fullbodyNode->GetObject("fullbody"))->OnUpdateGeometryData(false);
+  blunted::static_pointer_cast<Geometry>(fullbodyNode->GetObject("fullbody"))->OnUpdateGeometryData(false);
 }
 */
 
@@ -720,27 +940,26 @@ void HumanoidBase::PreparePutBuffers(unsigned long snapshotTime_ms) {
 
   buf_animApplyBuffer = animApplyBuffer;
   buf_animApplyBuffer.snapshotTime_ms = snapshotTime_ms;
-  /*
-  // some temporal buffers fail when switching anims - can't interpolate between these values from previous and new anim
-  if (currentAnim->frameNum == 0) {
-    buf_animApplyBuffer_TemporalOrientationOffset.Clear();
-    buf_animApplyBuffer_FrameNum.Clear();
-  }
-  buf_animApplyBuffer_TemporalPosition.SetValue(animApplyBuffer.position);
-  buf_animApplyBuffer_TemporalOrientationOffset.SetValue(animApplyBuffer.orientationOffset);
-  buf_animApplyBuffer_FrameNum.SetValue(animApplyBuffer.frameNum);
-  */
 
-  // display humanoids farther away from action at half FPS
-  buf_LowDetailMode = false;
-  if (!player->GetExternalController() && !match->GetPause()) {
-    Vector3 focusPos = match->GetBall()->Predict(100).Get2D();
-    if (match->GetDesignatedPossessionPlayer()) {
-      focusPos = focusPos * 0.5f + match->GetDesignatedPossessionPlayer()->GetPosition() * 0.5f;
+  // Snapshot Procedural IK context safely for the render/Put phase
+  buf_ik.functionType = currentAnim->functionType;
+  buf_ik.frameNum = currentAnim->frameNum;
+  buf_ik.touchFrame = currentAnim->touchFrame;
+  buf_ik.touchLeg = 0;
+  if (currentAnim->touchFrame != -1 && currentAnim->anim) {
+    const std::string &bodypart = currentAnim->anim->GetVariable("touch_bodypart");
+    if (bodypart.find("left_foot") != std::string::npos || bodypart.find("left_leg") != std::string::npos) {
+      buf_ik.touchLeg = -1;
+    } else if (bodypart.find("right_foot") != std::string::npos || bodypart.find("right_leg") != std::string::npos) {
+      buf_ik.touchLeg = 1;
     }
-
-    if ((spatialState.position - focusPos).GetLength() > 14.0f) buf_LowDetailMode = true;
   }
+  buf_ik.ballWorldPos = match->GetBall()->Predict(0);
+  buf_ik.touchWorldPos = currentAnim->touchPos + currentAnim->positionOffset;
+  buf_ik.floatVelocity = spatialState.floatVelocity;
+  buf_ik.resetCounter = ikResetCounter;
+
+  buf_LowDetailMode = false;
 
 }
 
@@ -748,6 +967,8 @@ void HumanoidBase::FetchPutBuffers(unsigned long putTime_ms) {
 
   fetchedbuf_animApplyBuffer = buf_animApplyBuffer;
   assert(fetchedbuf_animApplyBuffer.anim == buf_animApplyBuffer.anim);
+
+  fetchedbuf_ik = buf_ik;
 
   fetchedbuf_LowDetailMode = buf_LowDetailMode;
   buf_bodyUpdatePhase++;
@@ -772,24 +993,19 @@ void HumanoidBase::Put() {
     buf_TemporalHumanoidNodes.at(i).actualNode->SetRotation(buf_TemporalHumanoidNodes.at(i).cachedOrientation, false);
   }
 
-  humanoidNode->RecursiveUpdateSpatialData(e_SpatialDataType_Both);
-
-  //printf("anim ptr: %i\n", fetchedbuf_animApplyBuffer.anim);
-  //printf("nodemap size: %i\n", nodeMap.size());
   fetchedbuf_animApplyBuffer.anim->Apply(nodeMap, fetchedbuf_animApplyBuffer.frameNum, -1, fetchedbuf_animApplyBuffer.smooth, fetchedbuf_animApplyBuffer.smoothFactor, fetchedbuf_animApplyBuffer.position, fetchedbuf_animApplyBuffer.orientation, fetchedbuf_animApplyBuffer.offsets, &movementHistory, timeDiff_ms, fetchedbuf_animApplyBuffer.noPos, false);
-
-  humanoidNode->RecursiveUpdateSpatialData(e_SpatialDataType_Both);
 
   // we've just set the humanoid positions for time fetchedbuf_animApplyBuffer.snapshotTime_ms. however, it's eventually going to be displayed in a historic position, for temporal smoothing.
   // thus; read out the current values we've just set, insert them in the temporal smoother, and get the historic spatial data instead (GetValue).
   for (unsigned int i = 0; i < buf_TemporalHumanoidNodes.size(); i++) {
     // save the non-historic version in cachedNode
-    buf_TemporalHumanoidNodes.at(i).cachedPosition = buf_TemporalHumanoidNodes.at(i).actualNode->GetPosition();
-    buf_TemporalHumanoidNodes.at(i).cachedOrientation = buf_TemporalHumanoidNodes.at(i).actualNode->GetRotation();
+    Vector3 curPos = buf_TemporalHumanoidNodes.at(i).actualNode->GetPosition();
+    Quaternion curRot = buf_TemporalHumanoidNodes.at(i).actualNode->GetRotation();
+    buf_TemporalHumanoidNodes.at(i).cachedPosition = curPos;
+    buf_TemporalHumanoidNodes.at(i).cachedOrientation = curRot;
 
-    // sudden realisation: by only SetValue'ing here instead of in prepareputbuffers, aren't we missing out on valuable interpolateable data?
-    buf_TemporalHumanoidNodes.at(i).position.SetValue(buf_TemporalHumanoidNodes.at(i).actualNode->GetPosition(), fetchedbuf_animApplyBuffer.snapshotTime_ms);
-    buf_TemporalHumanoidNodes.at(i).orientation.SetValue(buf_TemporalHumanoidNodes.at(i).actualNode->GetRotation(), fetchedbuf_animApplyBuffer.snapshotTime_ms);
+    buf_TemporalHumanoidNodes.at(i).position.SetValue(curPos, fetchedbuf_animApplyBuffer.snapshotTime_ms);
+    buf_TemporalHumanoidNodes.at(i).orientation.SetValue(curRot, fetchedbuf_animApplyBuffer.snapshotTime_ms);
 
     buf_TemporalHumanoidNodes.at(i).actualNode->SetPosition(buf_TemporalHumanoidNodes.at(i).position.GetValue(match->GetPreviousPutTime_ms()), false);
     buf_TemporalHumanoidNodes.at(i).actualNode->SetRotation(buf_TemporalHumanoidNodes.at(i).orientation.GetValue(match->GetPreviousPutTime_ms()), false);
@@ -797,56 +1013,191 @@ void HumanoidBase::Put() {
 
   humanoidNode->RecursiveUpdateSpatialData(e_SpatialDataType_Both);
 
+  ApplyProceduralIK();
+
   UpdateFullbodyNodes();
 }
 
-void HumanoidBase::CalculateGeomOffsets() {
-  /* todo
-  SetOffset("middle", 0.0, QUATERNION_IDENTITY);
-  SetOffset("neck", 0.0, QUATERNION_IDENTITY);
-  SetOffset("left_shoulder", 0.0, QUATERNION_IDENTITY);
-  SetOffset("right_shoulder", 0.0, QUATERNION_IDENTITY);
-  SetOffset("left_elbow", 0.0, QUATERNION_IDENTITY);
-  SetOffset("right_elbow", 0.0, QUATERNION_IDENTITY);
-  SetOffset("body", 0.0, QUATERNION_IDENTITY);
+void HumanoidBase::ApplyProceduralIK() {
+  if (!IsProceduralIKEnabled()) {
+    leftFootLock.Reset();
+    rightFootLock.Reset();
+    return;
+  }
 
-  if (currentAnim->functionType == e_FunctionType_Movement && match->IsInPlay()) {
+  if (fetchedbuf_ik.resetCounter != appliedIKResetCounter) {
+    appliedIKResetCounter = fetchedbuf_ik.resetCounter;
+    leftFootLock.Reset();
+    rightFootLock.Reset();
+  }
 
-    // aim a bit towards ball
+  if (!ikLeftThigh || !ikLeftKnee || !ikLeftAnkle ||
+      !ikRightThigh || !ikRightKnee || !ikRightAnkle || !ikBody) {
+    return;
+  }
 
-    Vector3 toBall = (currentMentalImage->GetBallPrediction(10) - spatialState.position).GetNormalized(spatialState.directionVec);
+  Node *lThigh = ikLeftThigh;
+  Node *lKnee  = ikLeftKnee;
+  Node *lAnkle = ikLeftAnkle;
+  Node *rThigh = ikRightThigh;
+  Node *rKnee  = ikRightKnee;
+  Node *rAnkle = ikRightAnkle;
 
-    // middle
-    radian bx, by, bz;
-    nodeMap.find("body")->second->GetDerivedRotation().GetAngles(bx, by, bz);
+  Vector3 rootOffset2D = humanoidNode->GetPosition().Get2D();
+  float invZMul = (zMultiplier > 0.001f) ? (1.0f / zMultiplier) : 1.0f;
 
-    // head
-    radian mx, my, mz;
-    nodeMap.find("middle")->second->GetDerivedRotation().GetAngles(mx, my, mz);
+  auto SkelToWorld = [&](const Vector3 &skelPos) -> Vector3 {
+    return rootOffset2D + (skelPos - rootOffset2D) * zMultiplier;
+  };
+  auto WorldToSkel = [&](const Vector3 &worldPos) -> Vector3 {
+    return rootOffset2D + (worldPos - rootOffset2D) * invZMul;
+  };
 
-    // middle
-    radian angle = FixAngle(toBall.GetAngle2D() - bz);
-    if (fabs(angle) < 0.8 * pi) {
-      angle = clamp(angle, -0.5 * pi, 0.5 * pi);
-      Quaternion middleOrientation;
-      middleOrientation.SetAngleAxis(angle, Vector3(0, 0, 1));
-      Quaternion rotX;
-      rotX.SetAngleAxis(0.05f * pi, Vector3(1, 0, 0));
-      middleOrientation = rotX * middleOrientation;
-      float bias = clamp(0.25f * pi - (fabs(mx) + fabs(my)) - 0.15f, 0, 0.25f * pi) * 0.4f;
-      SetOffset("middle", bias, middleOrientation.GetNormalized());
-    }
+  float dt = clamp((float)match->GetTimeSincePreviousPut_ms() * 0.001f, 0.002f, 0.04f);
+  float groundAnkleZ = 0.090f * zMultiplier;
 
-    // head
-    angle = FixAngle(toBall.GetAngle2D() - mz);
-    if (fabs(angle) < 0.8 * pi) {
-      angle = clamp(angle, -0.5 * pi, 0.5 * pi);
-      Quaternion neckOrientation;
-      neckOrientation.SetAngleAxis(angle, Vector3(0, 0, 1));
-      SetOffset("neck", 0.6, neckOrientation.GetNormalized());
+  Vector3 bodyWorldPos = SkelToWorld(ikBody->GetDerivedPosition());
+  e_FunctionType fn = fetchedbuf_ik.functionType;
+  bool allowFootLock =
+      (fn == e_FunctionType_Movement || fn == e_FunctionType_BallControl ||
+       fn == e_FunctionType_Trap || fn == e_FunctionType_ShortPass ||
+       fn == e_FunctionType_LongPass || fn == e_FunctionType_HighPass ||
+       fn == e_FunctionType_Shot || fn == e_FunctionType_Interfere) &&
+      (bodyWorldPos.coords[2] > 0.62f * zMultiplier && bodyWorldPos.coords[2] < 1.22f * zMultiplier);
+
+  // Check if Ball-Touch IK is active on left (-1) or right (+1) leg
+  int activeBallTouchLeg = 0;
+  float ballTouchWeight = 0.0f;
+  if (fetchedbuf_ik.touchLeg != 0 && fetchedbuf_ik.touchFrame >= 0) {
+    float frameDiff = (float)(fetchedbuf_ik.frameNum - fetchedbuf_ik.touchFrame);
+    if (frameDiff >= -6.0f && frameDiff <= 3.0f) {
+      activeBallTouchLeg = fetchedbuf_ik.touchLeg;
+      if (frameDiff <= 0.0f) {
+        ballTouchWeight = curve(clamp(1.0f - (-frameDiff) / 6.0f, 0.0f, 1.0f), 0.7f);
+      } else {
+        ballTouchWeight = curve(clamp(1.0f - frameDiff / 3.5f, 0.0f, 1.0f), 0.7f);
+      }
+      ballTouchWeight *= 0.85f;
     }
   }
-  */
+
+  auto ProcessLeg = [&](int legSign, Node *thigh, Node *knee, Node *ankle, FootLockState &lockState) {
+    Vector3 rawAnkleWorld = SkelToWorld(ankle->GetDerivedPosition());
+    Vector3 hipWorld = SkelToWorld(thigh->GetDerivedPosition());
+    float maxLegLenWorld = ((knee->GetDerivedPosition() - thigh->GetDerivedPosition()).GetLength() +
+                            (ankle->GetDerivedPosition() - knee->GetDerivedPosition()).GetLength()) * zMultiplier;
+
+    float vz = 0.0f;
+    if (lockState.initialized) {
+      vz = (rawAnkleWorld.coords[2] - lockState.prevRawWorldPos.coords[2]) / dt;
+    } else {
+      lockState.prevRawWorldPos = rawAnkleWorld;
+      lockState.initialized = true;
+    }
+    lockState.prevRawWorldPos = rawAnkleWorld;
+
+    // 1) Ball-Touch IK takes priority on the kicking/trapping foot around touchFrame
+    if (activeBallTouchLeg == legSign && ballTouchWeight > 0.01f) {
+      lockState.locked = false;
+      lockState.weight = std::max(0.0f, lockState.weight - 14.0f * dt);
+
+      Vector3 ballPos = fetchedbuf_ik.ballWorldPos;
+      Vector3 contactOffsetDir = (rawAnkleWorld - ballPos).GetNormalized(Vector3(0, 0, 1));
+      Vector3 desiredAnkleWorld = ballPos + contactOffsetDir * 0.135f;
+      if (desiredAnkleWorld.coords[2] < groundAnkleZ) desiredAnkleWorld.coords[2] = groundAnkleZ;
+
+      // Clamp maximum reach deviation from animated trajectory so misses never dislocate the leg
+      Vector3 delta = desiredAnkleWorld - rawAnkleWorld;
+      float maxOffset = 0.26f * zMultiplier;
+      if (delta.GetLength() > maxOffset) {
+        desiredAnkleWorld = rawAnkleWorld + delta.GetNormalized(0) * maxOffset;
+      }
+
+      SolveTwoBoneLegIK(thigh, knee, ankle, WorldToSkel(desiredAnkleWorld), ballTouchWeight, 0.0f);
+      return;
+    }
+
+    // 2) Foot Locking IK (eliminates foot-sliding during Movement/Action/Rotation Smuggle)
+    float lockEnterZ = 0.126f * zMultiplier;
+    float lockExitZ  = 0.146f * zMultiplier;
+    float maxLockDrift = 0.25f * zMultiplier;
+
+    if (!allowFootLock) {
+      lockState.locked = false;
+    } else if (!lockState.locked) {
+      if (rawAnkleWorld.coords[2] <= lockEnterZ && fabs(vz) < 0.65f) {
+        lockState.locked = true;
+        lockState.lockedWorldPos = rawAnkleWorld;
+        lockState.lockedWorldPos.coords[2] = groundAnkleZ;
+      }
+    } else {
+      float drift2D = (lockState.lockedWorldPos - rawAnkleWorld).Get2D().GetLength();
+      float hipToLock = (lockState.lockedWorldPos - hipWorld).GetLength();
+      if (rawAnkleWorld.coords[2] > lockExitZ || vz > 0.70f ||
+          drift2D > maxLockDrift || hipToLock > 0.975f * maxLegLenWorld) {
+        lockState.locked = false;
+      }
+    }
+
+    if (lockState.locked) {
+      lockState.weight = std::min(1.0f, lockState.weight + 15.0f * dt);
+    } else {
+      lockState.weight = std::max(0.0f, lockState.weight - 12.0f * dt);
+    }
+
+    if (lockState.weight > 0.002f) {
+      Vector3 targetWorld = lockState.lockedWorldPos;
+      targetWorld.coords[2] = groundAnkleZ;
+      SolveTwoBoneLegIK(thigh, knee, ankle, WorldToSkel(targetWorld), lockState.weight, 0.65f * lockState.weight);
+    } else if (allowFootLock && rawAnkleWorld.coords[2] < groundAnkleZ) {
+      // Prevent subtle ground penetration even when unlocked
+      Vector3 clampedWorld = rawAnkleWorld;
+      clampedWorld.coords[2] = groundAnkleZ;
+      SolveTwoBoneLegIK(thigh, knee, ankle, WorldToSkel(clampedWorld), 1.0f, 0.35f);
+    }
+  };
+
+  ProcessLeg(-1, lThigh, lKnee, lAnkle, leftFootLock);
+  ProcessLeg( 1, rThigh, rKnee, rAnkle, rightFootLock);
+}
+
+void HumanoidBase::CalculateGeomOffsets() {
+  SetOffset("middle", 0.0f, QUATERNION_IDENTITY);
+  SetOffset("neck", 0.0f, QUATERNION_IDENTITY);
+
+  if (!IsProceduralIKEnabled() || !match) return;
+
+  if (currentAnim->functionType == e_FunctionType_Movement) {
+    Vector3 eyePos = spatialState.position + Vector3(0, 0, 1.62f * zMultiplier);
+    Vector3 ballPos = match->GetBall()->Predict(60);
+    Vector3 toBall = ballPos - eyePos;
+    float horizDist = std::max(0.4f, toBall.Get2D().GetLength());
+    Vector3 bodyDir2D = spatialState.relBodyDirectionVecNonquantized.GetRotated2D(spatialState.angle);
+    radian rawYaw = toBall.Get2D().GetNormalized(bodyDir2D).GetAngle2D(bodyDir2D);
+
+    radian targetYaw = 0.0f;
+    radian targetPitch = 0.0f;
+    if (fabs(rawYaw) < 0.78f * pi) {
+      float fovFade = NormalizedClamp(0.78f * pi - fabs(rawYaw), 0.0f, 0.25f * pi);
+      targetYaw = clamp(rawYaw, -0.48f * pi, 0.48f * pi) * fovFade;
+      targetPitch = clamp(std::atan2(toBall.coords[2], horizDist), -0.20f * pi, 0.26f * pi) * fovFade;
+    }
+
+    smoothedLookYaw += (targetYaw - smoothedLookYaw) * 0.12f;
+    smoothedLookPitch += (targetPitch - smoothedLookPitch) * 0.12f;
+
+    if (fabs(smoothedLookYaw) > 0.005f || fabs(smoothedLookPitch) > 0.005f) {
+      Quaternion midZ, midX;
+      midZ.SetAngleAxis(smoothedLookYaw * 0.30f, Vector3(0, 0, 1));
+      midX.SetAngleAxis(-smoothedLookPitch * 0.30f, Vector3(1, 0, 0));
+      SetOffset("middle", 0.45f, (midZ * midX).GetNormalized(), true);
+
+      Quaternion neckZ, neckX;
+      neckZ.SetAngleAxis(smoothedLookYaw * 0.70f, Vector3(0, 0, 1));
+      neckX.SetAngleAxis(-smoothedLookPitch * 0.70f, Vector3(1, 0, 0));
+      SetOffset("neck", 0.75f, (neckZ * neckX).GetNormalized(), true);
+    }
+  }
 }
 
 void HumanoidBase::SetOffset(const std::string &nodeName, float bias, const Quaternion &orientation, bool isRelative) {
@@ -888,37 +1239,37 @@ int HumanoidBase::GetIdleMovementAnimID() {
   int desiredIdleLevel = 1;
   SetNumericVariableSimilarityPredicate("idlelevel", desiredIdleLevel);
   #ifdef dataSetSortable
-  dataSet.sort(boost::bind(&Humanoid::CompareNumericVariable, this, _1, _2));
+  dataSet.sort(blunted::Bind(&Humanoid::CompareNumericVariable, this, _1, _2));
   #else
-  std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&Humanoid::CompareNumericVariable, this, _1, _2));
+  std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&Humanoid::CompareNumericVariable, this, _1, _2));
   #endif
 
   SetIncomingBodyDirectionSimilarityPredicate(Vector3(0, -1, 0));
   #ifdef dataSetSortable
-  dataSet.sort(boost::bind(&Humanoid::CompareIncomingBodyDirectionSimilarity, this, _1, _2));
+  dataSet.sort(blunted::Bind(&Humanoid::CompareIncomingBodyDirectionSimilarity, this, _1, _2));
   #else
-  std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&Humanoid::CompareIncomingBodyDirectionSimilarity, this, _1, _2));
+  std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&Humanoid::CompareIncomingBodyDirectionSimilarity, this, _1, _2));
   #endif
 
   SetIncomingVelocitySimilarityPredicate(e_Velocity_Idle);
   #ifdef dataSetSortable
-  dataSet.sort(boost::bind(&Humanoid::CompareIncomingVelocitySimilarity, this, _1, _2));
+  dataSet.sort(blunted::Bind(&Humanoid::CompareIncomingVelocitySimilarity, this, _1, _2));
   #else
-  std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&Humanoid::CompareIncomingVelocitySimilarity, this, _1, _2));
+  std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&Humanoid::CompareIncomingVelocitySimilarity, this, _1, _2));
   #endif
 
   SetMovementSimilarityPredicate(Vector3(0, -1, 0), e_Velocity_Idle);
   SetBodyDirectionSimilarityPredicate(spatialState.position + Vector3(0, -10, 0).GetRotated2D(spatialState.angle)); // lookat
   #ifdef dataSetSortable
-  dataSet.sort(boost::bind(&HumanoidBase::CompareBodyDirectionSimilarity, this, _1, _2));
+  dataSet.sort(blunted::Bind(&HumanoidBase::CompareBodyDirectionSimilarity, this, _1, _2));
   #else
-  std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&HumanoidBase::CompareBodyDirectionSimilarity, this, _1, _2));
+  std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&HumanoidBase::CompareBodyDirectionSimilarity, this, _1, _2));
   #endif
 
   #ifdef dataSetSortable
-  dataSet.sort(boost::bind(&HumanoidBase::CompareMovementSimilarity, this, _1, _2));
+  dataSet.sort(blunted::Bind(&HumanoidBase::CompareMovementSimilarity, this, _1, _2));
   #else
-  std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&HumanoidBase::CompareMovementSimilarity, this, _1, _2));
+  std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&HumanoidBase::CompareMovementSimilarity, this, _1, _2));
   #endif
 
   //printf("%s\n", anims->GetAnim(*dataSet.begin())->GetName().c_str());
@@ -1010,6 +1361,9 @@ void HumanoidBase::ResetPosition(const Vector3 &newPos, const Vector3 &focusPos)
   decayingDifficultyFactor = 0.0f;
 
   movementHistory.clear();
+  ikResetCounter++;
+  smoothedLookYaw = 0.0f;
+  smoothedLookPitch = 0.0f;
 
   // clear temporalsmoother vars
   // todo: not sure if we may access buf_ vars here
@@ -1054,17 +1408,17 @@ void HumanoidBase::TripMe(const Vector3 &tripVector, int tripType) {
   }
 }
 
-void HumanoidBase::SetKit(boost::intrusive_ptr < Resource<Surface> > newKit) {
+void HumanoidBase::SetKit(blunted::intrusive_ptr < Resource<Surface> > newKit) {
   if (Verbose()) printf("setting new kit: %s\n", newKit->GetIdentString().c_str());
-  boost::intrusive_ptr< Resource<GeometryData> > bodyGeom = boost::static_pointer_cast<Geometry>(fullbodyNode->GetObject("fullbody"))->GetGeometryData();
+  blunted::intrusive_ptr< Resource<GeometryData> > bodyGeom = blunted::static_pointer_cast<Geometry>(fullbodyNode->GetObject("fullbody"))->GetGeometryData();
 
   bodyGeom->resourceMutex.lock();
 
   std::vector < MaterializedTriangleMesh > &tmesh = bodyGeom->GetResource()->GetTriangleMeshesRef();
 
-  if (newKit != boost::intrusive_ptr< Resource<Surface> >()) {
+  if (newKit != blunted::intrusive_ptr< Resource<Surface> >()) {
     for (unsigned int i = 0; i < tmesh.size(); i++) {
-      if (tmesh.at(i).material.diffuseTexture != boost::intrusive_ptr< Resource<Surface> >()) {
+      if (tmesh.at(i).material.diffuseTexture != blunted::intrusive_ptr< Resource<Surface> >()) {
         if (tmesh.at(i).material.diffuseTexture->GetIdentString() == kitDiffuseTextureIdentString) {
           tmesh.at(i).material.diffuseTexture = newKit;
           tmesh.at(i).material.specular_amount = 0.01f;//0.02f;//0.033f;//0.01f;
@@ -1077,7 +1431,7 @@ void HumanoidBase::SetKit(boost::intrusive_ptr < Resource<Surface> > newKit) {
 
   bodyGeom->resourceMutex.unlock();
 
-  boost::static_pointer_cast<Geometry>(fullbodyNode->GetObject("fullbody"))->OnUpdateGeometryData();
+  blunted::static_pointer_cast<Geometry>(fullbodyNode->GetObject("fullbody"))->OnUpdateGeometryData();
 }
 
 void HumanoidBase::ResetSituation(const Vector3 &focusPos) {
@@ -1108,18 +1462,18 @@ void HumanoidBase::_KeepBestDirectionAnims(DataSet &dataSet, const PlayerCommand
   if (bestQuadrantID == -1) {
 
     #ifdef dataSetSortable
-    dataSet.sort(boost::bind(&HumanoidBase::CompareMovementSimilarity, this, _1, _2));
+    dataSet.sort(blunted::Bind(&HumanoidBase::CompareMovementSimilarity, this, _1, _2));
     #else
-    std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&HumanoidBase::CompareMovementSimilarity, this, _1, _2));
+    std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&HumanoidBase::CompareMovementSimilarity, this, _1, _2));
     #endif
 
     // we want the best anim to be a baseanim, and compare other anims to it
     if (strict) {
       if (command.desiredFunctionType != e_FunctionType_Movement) {
         #ifdef dataSetSortable
-        dataSet.sort(boost::bind(&Humanoid::CompareBaseanimSimilarity, this, _1, _2));
+        dataSet.sort(blunted::Bind(&Humanoid::CompareBaseanimSimilarity, this, _1, _2));
         #else
-        std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&Humanoid::CompareBaseanimSimilarity, this, _1, _2));
+        std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&Humanoid::CompareBaseanimSimilarity, this, _1, _2));
         #endif
       }
     }
@@ -1178,18 +1532,18 @@ void HumanoidBase::_KeepBestBodyDirectionAnims(DataSet &dataSet, const PlayerCom
   assert(dataSet.size() != 0);
 
   #ifdef dataSetSortable
-  dataSet.sort(boost::bind(&HumanoidBase::CompareBodyDirectionSimilarity, this, _1, _2));
+  dataSet.sort(blunted::Bind(&HumanoidBase::CompareBodyDirectionSimilarity, this, _1, _2));
   #else
-  std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&HumanoidBase::CompareBodyDirectionSimilarity, this, _1, _2));
+  std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&HumanoidBase::CompareBodyDirectionSimilarity, this, _1, _2));
   #endif
 
   // we want the best anim to be a baseanim, and compare other anims to it
   if (strict) {
     if (command.desiredFunctionType != e_FunctionType_Movement) {
       #ifdef dataSetSortable
-      dataSet.sort(boost::bind(&Humanoid::CompareBaseanimSimilarity, this, _1, _2));
+      dataSet.sort(blunted::Bind(&Humanoid::CompareBaseanimSimilarity, this, _1, _2));
       #else
-      std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&Humanoid::CompareBaseanimSimilarity, this, _1, _2));
+      std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&Humanoid::CompareBaseanimSimilarity, this, _1, _2));
       #endif
     }
   }
@@ -1438,9 +1792,9 @@ bool HumanoidBase::SelectAnim(const PlayerCommand &command, e_InterruptAnim loca
 
     else { // undefined animtype
       #ifdef dataSetSortable
-      dataSet.sort(boost::bind(&HumanoidBase::CompareMovementSimilarity, this, _1, _2));
+      dataSet.sort(blunted::Bind(&HumanoidBase::CompareMovementSimilarity, this, _1, _2));
       #else
-      std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&HumanoidBase::CompareMovementSimilarity, this, _1, _2));
+      std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&HumanoidBase::CompareMovementSimilarity, this, _1, _2));
       #endif
     }
 
@@ -1449,39 +1803,39 @@ bool HumanoidBase::SelectAnim(const PlayerCommand &command, e_InterruptAnim loca
   int desiredIdleLevel = 1;
   SetNumericVariableSimilarityPredicate("idlelevel", desiredIdleLevel);
   #ifdef dataSetSortable
-  dataSet.sort(boost::bind(&Humanoid::CompareNumericVariable, this, _1, _2));
+  dataSet.sort(blunted::Bind(&Humanoid::CompareNumericVariable, this, _1, _2));
   #else
-  std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&Humanoid::CompareNumericVariable, this, _1, _2));
+  std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&Humanoid::CompareNumericVariable, this, _1, _2));
   #endif
 
   SetFootSimilarityPredicate(spatialState.foot);
   #ifdef dataSetSortable
-  dataSet.sort(boost::bind(&HumanoidBase::CompareFootSimilarity, this, _1, _2));
+  dataSet.sort(blunted::Bind(&HumanoidBase::CompareFootSimilarity, this, _1, _2));
   #else
-  std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&HumanoidBase::CompareFootSimilarity, this, _1, _2));
+  std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&HumanoidBase::CompareFootSimilarity, this, _1, _2));
   #endif
 
   SetIncomingBodyDirectionSimilarityPredicate(spatialState.relBodyDirectionVec);
   #ifdef dataSetSortable
-  dataSet.sort(boost::bind(&HumanoidBase::CompareIncomingBodyDirectionSimilarity, this, _1, _2));
+  dataSet.sort(blunted::Bind(&HumanoidBase::CompareIncomingBodyDirectionSimilarity, this, _1, _2));
   #else
-  std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&HumanoidBase::CompareIncomingBodyDirectionSimilarity, this, _1, _2));
+  std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&HumanoidBase::CompareIncomingBodyDirectionSimilarity, this, _1, _2));
   #endif
 
   SetIncomingVelocitySimilarityPredicate(spatialState.enumVelocity);
   #ifdef dataSetSortable
-  dataSet.sort(boost::bind(&HumanoidBase::CompareIncomingVelocitySimilarity, this, _1, _2));
+  dataSet.sort(blunted::Bind(&HumanoidBase::CompareIncomingVelocitySimilarity, this, _1, _2));
   #else
-  std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&HumanoidBase::CompareIncomingVelocitySimilarity, this, _1, _2));
+  std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&HumanoidBase::CompareIncomingVelocitySimilarity, this, _1, _2));
   #endif
 
   if (command.useDesiredTripDirection) {
     Vector3 relDesiredTripDirection = command.desiredTripDirection.GetRotated2D(-spatialState.angle);
     SetTripDirectionSimilarityPredicate(relDesiredTripDirection);
     #ifdef dataSetSortable
-    dataSet.sort(boost::bind(&HumanoidBase::CompareTripDirectionSimilarity, this, _1, _2));
+    dataSet.sort(blunted::Bind(&HumanoidBase::CompareTripDirectionSimilarity, this, _1, _2));
     #else
-    std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&HumanoidBase::CompareTripDirectionSimilarity, this, _1, _2));
+    std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&HumanoidBase::CompareTripDirectionSimilarity, this, _1, _2));
     #endif
 
     //if (player->GetDebug() && command.desiredFunctionType == e_FunctionType_Trip) SetRedDebugPilon(player->GetPosition() + command.desiredTripDirection * 5);
@@ -1489,9 +1843,9 @@ bool HumanoidBase::SelectAnim(const PlayerCommand &command, e_InterruptAnim loca
 
   if (command.desiredFunctionType != e_FunctionType_Movement) {
     #ifdef dataSetSortable
-    dataSet.sort(boost::bind(&HumanoidBase::CompareBaseanimSimilarity, this, _1, _2));
+    dataSet.sort(blunted::Bind(&HumanoidBase::CompareBaseanimSimilarity, this, _1, _2));
     #else
-    std::stable_sort(dataSet.begin(), dataSet.end(), boost::bind(&HumanoidBase::CompareBaseanimSimilarity, this, _1, _2));
+    std::stable_sort(dataSet.begin(), dataSet.end(), blunted::Bind(&HumanoidBase::CompareBaseanimSimilarity, this, _1, _2));
     #endif
   }
 

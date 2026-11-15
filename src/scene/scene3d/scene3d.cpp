@@ -17,7 +17,7 @@ namespace blunted {
 
   Scene3D::Scene3D(std::string name) : Scene(name, e_SceneType_Scene3D) {
     //printf("CREATING SCENE3D\n");
-    boost::intrusive_ptr<Node> root(new Node("Scene3D root node"));
+    blunted::intrusive_ptr<Node> root(new Node("Scene3D root node"));
     hierarchyRoot = root;
 
     supportedObjectTypes.push_back(e_ObjectType_Geometry);
@@ -67,15 +67,15 @@ namespace blunted {
     hierarchyRoot->PrintTree();
   }
 
-  void Scene3D::AddNode(boost::intrusive_ptr<Node> node) {
+  void Scene3D::AddNode(blunted::intrusive_ptr<Node> node) {
     hierarchyRoot->AddNode(node);
   }
 
-  void Scene3D::DeleteNode(boost::intrusive_ptr<Node> node) {
+  void Scene3D::DeleteNode(blunted::intrusive_ptr<Node> node) {
     hierarchyRoot->DeleteNode(node);
   }
 
-  void Scene3D::AddObject(boost::intrusive_ptr<Object> object) {
+  void Scene3D::AddObject(blunted::intrusive_ptr<Object> object) {
     if (!SupportedObjectType(object->GetObjectType())) {
       Log(e_FatalError, "Scene3D", "AddObject", "Object type not supported");
     }
@@ -86,7 +86,7 @@ namespace blunted {
     hierarchyRoot->DeleteObject(name);
   }
 
-  void Scene3D::DeleteObject(boost::intrusive_ptr<Object> object) {
+  void Scene3D::DeleteObject(blunted::intrusive_ptr<Object> object) {
     hierarchyRoot->DeleteObject(object);
   }
 
