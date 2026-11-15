@@ -309,7 +309,6 @@ namespace blunted {
     renderer->SetUniformFloat("aa", "contextHeight", (float)outH);
     renderer->SetUniformFloat("aa", "contextX", (float)outX);
     renderer->SetUniformFloat("aa", "contextY", (float)outY);
-    renderer->SetUniformFloat2("aa", "sourceTexelSize", 1.0f / (float)std::max(1, view.width), 1.0f / (float)std::max(1, view.height));
     renderer->SetUniformInt("aa", "aaMode", (int)renderer->GetAntiAliasingMode());
 
     renderer->SetViewport(outX, outY, outW, outH);

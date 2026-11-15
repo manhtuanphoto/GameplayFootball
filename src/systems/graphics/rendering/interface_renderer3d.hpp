@@ -80,8 +80,7 @@ namespace blunted {
   enum e_AntiAliasingMode {
     e_AntiAliasing_Off = 0,
     e_AntiAliasing_FXAA_Fast = 1,
-    e_AntiAliasing_FXAA_Quality = 2,
-    e_AntiAliasing_Ultra_SSAA = 3
+    e_AntiAliasing_FXAA_Quality = 2
   };
 
   struct View {
@@ -339,7 +338,7 @@ namespace blunted {
       virtual void SetVSync(bool enabled) {}
       virtual bool GetVSync() const { return true; }
       virtual void SetAntiAliasingMode(e_AntiAliasingMode mode) {}
-      virtual e_AntiAliasingMode GetAntiAliasingMode() const { return e_AntiAliasing_FXAA_Quality; }
+      virtual e_AntiAliasingMode GetAntiAliasingMode() const { return e_AntiAliasing_FXAA_Fast; }
       virtual void SetPolygonOffset(float scale, float bias) = 0;
 
       // shaders

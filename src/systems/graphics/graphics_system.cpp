@@ -59,7 +59,7 @@ namespace blunted {
     width = config.GetInt("context_x", defaultW);
     height = config.GetInt("context_y", defaultH);
     bpp = config.GetInt("context_bpp", 32);
-    int aaModeInt = clamp(config.GetInt("context_aa", (int)e_AntiAliasing_FXAA_Quality), 0, 3);
+    int aaModeInt = clamp(config.GetInt("context_aa", (int)e_AntiAliasing_FXAA_Fast), 0, 2);
     renderer3DTask->SetVSync(vsync);
     renderer3DTask->SetAntiAliasingMode((e_AntiAliasingMode)aaModeInt);
 

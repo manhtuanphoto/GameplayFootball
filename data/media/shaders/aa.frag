@@ -5,9 +5,8 @@
 // Anti-Aliasing + Contrast-Adaptive Turf Clarity (CAS) Post-Pass
 // Modes:
 //   0 = Off
-//   1 = FXAA Fast (5-tap directional edge AA for very low-end GPUs)
+//   1 = FXAA Fast (Default - lightweight 5-tap directional edge AA)
 //   2 = FXAA Quality (12-step FXAA 3.11 Quality + G-Buffer Silhouette Assist + CAS)
-//   3 = Ultra (4-tap RGSS Supersample Resolve + 12-step FXAA 3.11 Quality + CAS)
 
 uniform sampler2D map_postprocess; // 0: .rgb = perceptual sRGB, .a = perceptual luma
 uniform sampler2D map_modifier;    // 1: .r = G-buffer depth/normal silhouette factor
@@ -16,7 +15,6 @@ uniform float contextWidth;
 uniform float contextHeight;
 uniform float contextX;
 uniform float contextY;
-uniform vec2 sourceTexelSize;
 uniform int aaMode;
 
 out vec4 stdout;
@@ -25,24 +23,6 @@ const float QUALITY_STEPS[12] = float[12](
   1.0f, 1.0f, 1.0f, 1.0f, 1.5f, 2.0f,
   2.0f, 2.0f, 2.0f, 2.0f, 4.0f, 8.0f
 );
-
-vec4 SampleCenterRGSS(vec2 uv, vec2 rcpFrame) {
-  // Blend between 1-tap native and 4-tap Rotated-Grid Super-Sampling when supersampled
-  vec2 scaleRatio = rcpFrame / max(sourceTexelSize, vec2(1e-6f));
-  if (scaleRatio.x <= 1.05f && scaleRatio.y <= 1.05f) {
-    return texture(map_postprocess, uv);
-  }
-  vec2 o1 = vec2( 0.125f,  0.375f) * rcpFrame;
-  vec2 o2 = vec2(-0.375f,  0.125f) * rcpFrame;
-  vec2 o3 = vec2( 0.375f, -0.125f) * rcpFrame;
-  vec2 o4 = vec2(-0.125f, -0.375f) * rcpFrame;
-  return 0.25f * (
-    texture(map_postprocess, uv + o1) +
-    texture(map_postprocess, uv + o2) +
-    texture(map_postprocess, uv + o3) +
-    texture(map_postprocess, uv + o4)
-  );
-}
 
 vec3 ApplyCAS(vec3 cM, vec3 cN, vec3 cS, vec3 cE, vec3 cW, float sharpness) {
   vec3 mnRGB = min(cM, min(min(cN, cS), min(cE, cW)));
@@ -90,8 +70,8 @@ vec3 RunFXAAFast(vec2 uv, vec2 rcpFrame) {
   return rgbB.rgb;
 }
 
-vec3 RunFXAAQuality(vec2 uv, vec2 rcpFrame, bool ultraMode) {
-  vec4 rgbyM = ultraMode ? SampleCenterRGSS(uv, rcpFrame) : texture(map_postprocess, uv);
+vec3 RunFXAAQuality(vec2 uv, vec2 rcpFrame) {
+  vec4 rgbyM = texture(map_postprocess, uv);
   vec4 rgbyN = texture(map_postprocess, uv + vec2( 0.0f, -rcpFrame.y));
   vec4 rgbyS = texture(map_postprocess, uv + vec2( 0.0f,  rcpFrame.y));
   vec4 rgbyW = texture(map_postprocess, uv + vec2(-rcpFrame.x,  0.0f));
@@ -112,8 +92,7 @@ vec3 RunFXAAQuality(vec2 uv, vec2 rcpFrame, bool ultraMode) {
 
   // Non-edge interior pixels (turf, kit fabric): keep razor-sharp detail via bounded CAS
   if (lumaRange < edgeThreshold) {
-    float casSharpness = ultraMode ? 0.20f : 0.15f;
-    return ApplyCAS(rgbyM.rgb, rgbyN.rgb, rgbyS.rgb, rgbyE.rgb, rgbyW.rgb, casSharpness);
+    return ApplyCAS(rgbyM.rgb, rgbyN.rgb, rgbyS.rgb, rgbyE.rgb, rgbyW.rgb, 0.15f);
   }
 
   float lumaNW = texture(map_postprocess, uv + vec2(-rcpFrame.x, -rcpFrame.y)).a;
@@ -132,7 +111,7 @@ vec3 RunFXAAQuality(vec2 uv, vec2 rcpFrame, bool ultraMode) {
   float lumaAvg = (2.0f * (lumaNS + lumaWE) + lumaNWSW + lumaNESE) * (1.0f / 12.0f);
   float subpixOffset1 = clamp(abs(lumaAvg - lumaM) / max(lumaRange, 1e-5f), 0.0f, 1.0f);
   float subpixOffset2 = (-2.0f * subpixOffset1 + 3.0f) * subpixOffset1 * subpixOffset1;
-  float subpixQuality = (geomEdge > 0.15f || ultraMode) ? 0.75f : 0.62f;
+  float subpixQuality = (geomEdge > 0.15f) ? 0.75f : 0.62f;
   float subpixOffsetFinal = subpixOffset2 * subpixOffset2 * subpixQuality;
 
   // Local 3x3 horizontal vs vertical orientation classification
@@ -220,7 +199,7 @@ vec3 RunFXAAQuality(vec2 uv, vec2 rcpFrame, bool ultraMode) {
     finalUv.x += finalOffset * stepLength;
   }
 
-  return ultraMode ? SampleCenterRGSS(finalUv, rcpFrame).rgb : texture(map_postprocess, finalUv).rgb;
+  return texture(map_postprocess, finalUv).rgb;
 }
 
 void main(void) {
@@ -229,15 +208,12 @@ void main(void) {
 
   vec3 result;
   if (aaMode <= 0) {
-    // Keep uniforms active across all driver optimizers while performing clean 1:1 bypass
-    float unusedGuard = (sourceTexelSize.x + texture(map_modifier, uv).r) * 0.0f;
+    float unusedGuard = texture(map_modifier, uv).r * 0.0f;
     result = texture(map_postprocess, uv).rgb + vec3(unusedGuard);
   } else if (aaMode == 1) {
     result = RunFXAAFast(uv, rcpFrame);
-  } else if (aaMode == 2) {
-    result = RunFXAAQuality(uv, rcpFrame, false);
   } else {
-    result = RunFXAAQuality(uv, rcpFrame, true);
+    result = RunFXAAQuality(uv, rcpFrame);
   }
 
   stdout = vec4(result, 1.0f);
