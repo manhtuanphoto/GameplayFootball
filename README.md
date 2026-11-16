@@ -15,8 +15,9 @@ A modernized C++17 / 64-bit fork of [GameplayFootball](https://github.com/Bazkie
   - Natural stadium hemisphere lighting, SSAO, filmic highlight rolloff, and sRGB perceptual post-processing.
   - Live-switchable **Anti-Aliasing (`[F10]` in-game or `Settings -> Graphics`)**:
     - `OFF` — Raw 1:1 pixels
-    - `FXAA Fast` *(Default)* — Ultra-lightweight directional edge smoothing for maximum FPS on low-end GPUs
-    - `FXAA Quality` — 12-step FXAA 3.11 tangent search + G-Buffer silhouette detection + Contrast-Adaptive Sharpening (CAS) for crisp turf
+    - `FXAA Fast` — Ultra-lightweight directional edge smoothing for maximum FPS on low-end GPUs
+    - `FXAA Quality` *(Default)* — 12-step FXAA 3.11 tangent search + G-Buffer silhouette detection + Contrast-Adaptive Sharpening (CAS) for crisp turf
+    - `Ultra (SSAA + FXAA)` — `1.35x` 4-tap Rotated-Grid Super-Sampling (RGSS) + FXAA Quality + CAS
   - Instant **Borderless Fullscreen (`[F11]` / `Alt+Enter`)** and live resolution switching without restarting.
 - **Broadcast-Style Match HUD**
   - Top-left broadcast scoreboard & match timer.
@@ -34,7 +35,7 @@ A modernized C++17 / 64-bit fork of [GameplayFootball](https://github.com/Bazkie
 | Key | Action |
 | --- | --- |
 | `F11` / `Alt+Enter` | Toggle Borderless Fullscreen |
-| `F10` | Cycle Anti-Aliasing (`OFF` -> `FXAA Fast` -> `FXAA Quality`) |
+| `F10` | Cycle Anti-Aliasing (`OFF` -> `FXAA Fast` -> `FXAA Quality` -> `Ultra`) |
 | `F9` | Show / Hide top controls bar |
 | `F7` | Toggle AI `MentalImage` tactical inspector |
 | `F1` – `F6` | Debug / Camera / Ball / Mode / Reset / IK tools |

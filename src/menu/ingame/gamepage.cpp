@@ -19,10 +19,11 @@
 using namespace blunted;
 
 std::string GamePage::BuildTestKeysCaptionText() const {
-  int aa = clamp(GetConfiguration()->GetInt("context_aa", (int)e_AntiAliasing_FXAA_Fast), 0, 2);
-  const char *aaShort = "Fast";
+  int aa = clamp(GetConfiguration()->GetInt("context_aa", (int)e_AntiAliasing_FXAA_Quality), 0, 3);
+  const char *aaShort = "FXAA+";
   if (aa == 0) aaShort = "OFF";
-  else if (aa == 2) aaShort = "Quality";
+  else if (aa == 1) aaShort = "Fast";
+  else if (aa == 3) aaShort = "Ultra";
   return "[F1-F6] Sun/Cam/Ball/Mode/" + f5ModeLabel + "/IK | [F7] Mental | [F10] AA:" + aaShort + " | [F9] Hide";
 }
 
@@ -186,8 +187,8 @@ void GamePage::ProcessWindowingEvent(WindowingEvent *event) {
 void GamePage::ProcessKeyboardEvent(KeyboardEvent *event) {
 
   if (event->GetKeyOnce(SDLK_F10)) {
-    int curAA = clamp(GetConfiguration()->GetInt("context_aa", (int)e_AntiAliasing_FXAA_Fast), 0, 2);
-    int nextAA = (curAA + 1) % 3;
+    int curAA = clamp(GetConfiguration()->GetInt("context_aa", (int)e_AntiAliasing_FXAA_Quality), 0, 3);
+    int nextAA = (curAA + 1) % 4;
     GetConfiguration()->Set("context_aa", nextAA);
     GetConfiguration()->SaveFile(GetConfigFilename());
 

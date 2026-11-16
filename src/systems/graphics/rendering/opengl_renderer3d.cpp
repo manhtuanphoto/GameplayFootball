@@ -57,7 +57,7 @@ struct GLfunctions {
 
   GLfunctions mapping;
 
-  OpenGLRenderer3D::OpenGLRenderer3D() : context(0), window(0), contextIsActive(true), isFullscreen(false), vsyncEnabled(true), aaMode(e_AntiAliasing_FXAA_Fast), maxTextureSize(4096), windowedWidth(1600), windowedHeight(900) {
+  OpenGLRenderer3D::OpenGLRenderer3D() : context(0), window(0), contextIsActive(true), isFullscreen(false), vsyncEnabled(true), aaMode(e_AntiAliasing_FXAA_Quality), maxTextureSize(4096), windowedWidth(1600), windowedHeight(900) {
     FOV = 45;
     overallBrightness = 128;
 
@@ -606,8 +606,17 @@ struct GLfunctions {
     int nativeViewW = std::max(64, int(std::round(view.width_percent * 0.01f * fitW)));
     int nativeViewH = std::max(64, int(std::round(view.height_percent * 0.01f * fitH)));
 
-    int targetW = std::min(maxTextureSize, nativeViewW);
-    int targetH = std::min(maxTextureSize, nativeViewH);
+    float ssaaScale = (aaMode == e_AntiAliasing_Ultra_SSAA) ? 1.35f : 1.0f;
+    int targetW = std::max(64, int(std::round(nativeViewW * ssaaScale)));
+    int targetH = std::max(64, int(std::round(nativeViewH * ssaaScale)));
+
+    int maxSafeW = std::min(maxTextureSize, std::max(nativeViewW, 3840));
+    int maxSafeH = std::min(maxTextureSize, std::max(nativeViewH, 2160));
+    if (targetW > maxSafeW || targetH > maxSafeH) {
+      float clampScale = std::min((float)maxSafeW / (float)targetW, (float)maxSafeH / (float)targetH);
+      targetW = std::max(64, int(std::round(targetW * clampScale)));
+      targetH = std::max(64, int(std::round(targetH * clampScale)));
+    }
 
     renderW = (targetW + 1) & ~1;
     renderH = (targetH + 1) & ~1;
@@ -1925,6 +1934,7 @@ struct GLfunctions {
 
   void OpenGLRenderer3D::SetAntiAliasingMode(e_AntiAliasingMode mode) {
     aaMode = mode;
+    RefreshAllViews();
   }
 
   e_AntiAliasingMode OpenGLRenderer3D::GetAntiAliasingMode() const {
@@ -2250,6 +2260,7 @@ struct GLfunctions {
       SetUniformFloat("aa", "contextY", (float)0.0);
       SetUniformFloat("aa", "contextWidth", (float)context_width);
       SetUniformFloat("aa", "contextHeight", (float)context_height);
+      SetUniformFloat2("aa", "sourceTexelSize", 1.0f / (float)std::max(1, context_width), 1.0f / (float)std::max(1, context_height));
       SetUniformInt("aa", "aaMode", (int)aaMode);
     }
 

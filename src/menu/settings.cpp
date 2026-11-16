@@ -1287,7 +1287,7 @@ GraphicsPage::GraphicsPage(Gui2WindowManager *windowManager, const Gui2PageData 
 
   buttonFullscreen = new Gui2Button(windowManager, "button_graphics_toggle_fs", 0, 0, 32, 3, "Borderless Fullscreen (F11): OFF");
   buttonVSync = new Gui2Button(windowManager, "button_graphics_toggle_vsync", 0, 0, 32, 3, "VSync: ON");
-  buttonAntiAliasing = new Gui2Button(windowManager, "button_graphics_cycle_aa", 0, 0, 32, 3, "AA (F10): FXAA Fast");
+  buttonAntiAliasing = new Gui2Button(windowManager, "button_graphics_cycle_aa", 0, 0, 32, 3, "AA (F10): FXAA Quality");
   buttonFullscreen->sig_OnClick.connect(blunted::Bind(&GraphicsPage::ToggleFullscreen, this));
   buttonVSync->sig_OnClick.connect(blunted::Bind(&GraphicsPage::ToggleVSync, this));
   buttonAntiAliasing->sig_OnClick.connect(blunted::Bind(&GraphicsPage::CycleAntiAliasing, this));
@@ -1340,7 +1340,7 @@ GraphicsPage::~GraphicsPage() {
 void GraphicsPage::RefreshOptionButtons() {
   bool fs = GetConfiguration()->GetBool("context_fullscreen", false);
   bool vsync = GetConfiguration()->GetBool("context_vsync", true);
-  int aa = clamp(GetConfiguration()->GetInt("context_aa", (int)e_AntiAliasing_FXAA_Fast), 0, 2);
+  int aa = clamp(GetConfiguration()->GetInt("context_aa", (int)e_AntiAliasing_FXAA_Quality), 0, 3);
   if (buttonFullscreen) {
     buttonFullscreen->GetCaptionWidget()->SetCaption(std::string("Borderless Fullscreen (F11): ") + (fs ? "ON" : "OFF"));
   }
@@ -1348,9 +1348,10 @@ void GraphicsPage::RefreshOptionButtons() {
     buttonVSync->GetCaptionWidget()->SetCaption(std::string("VSync: ") + (vsync ? "ON" : "OFF"));
   }
   if (buttonAntiAliasing) {
-    const char *aaLabel = "FXAA Fast";
+    const char *aaLabel = "FXAA Quality";
     if (aa == 0) aaLabel = "OFF";
-    else if (aa == 2) aaLabel = "FXAA Quality";
+    else if (aa == 1) aaLabel = "FXAA Fast";
+    else if (aa == 3) aaLabel = "Ultra (SSAA + FXAA)";
     buttonAntiAliasing->GetCaptionWidget()->SetCaption(std::string("AA (F10): ") + aaLabel);
   }
 }
@@ -1387,8 +1388,8 @@ void GraphicsPage::ToggleVSync() {
 }
 
 void GraphicsPage::CycleAntiAliasing() {
-  int curAA = clamp(GetConfiguration()->GetInt("context_aa", (int)e_AntiAliasing_FXAA_Fast), 0, 2);
-  int nextAA = (curAA + 1) % 3;
+  int curAA = clamp(GetConfiguration()->GetInt("context_aa", (int)e_AntiAliasing_FXAA_Quality), 0, 3);
+  int nextAA = (curAA + 1) % 4;
   GetConfiguration()->Set("context_aa", nextAA);
   GetConfiguration()->SaveFile(GetConfigFilename());
 
@@ -1398,8 +1399,9 @@ void GraphicsPage::CycleAntiAliasing() {
   RefreshOptionButtons();
   if (statusCaption) {
     if (nextAA == 0) statusCaption->SetCaption("Anti-Aliasing disabled (raw pixels).");
-    else if (nextAA == 1) statusCaption->SetCaption("Applied FXAA Fast (default lightweight edge smoothing).");
-    else statusCaption->SetCaption("Applied FXAA Quality (12-step edge smoothing + crisp grass CAS).");
+    else if (nextAA == 1) statusCaption->SetCaption("Applied FXAA Fast (lightweight edge smoothing for low-end GPUs).");
+    else if (nextAA == 2) statusCaption->SetCaption("Applied FXAA Quality + CAS (smooth lines/silhouettes + crisp grass).");
+    else statusCaption->SetCaption("Applied Ultra AA (1.35x RGSS Supersampling + FXAA Quality + CAS).");
   }
 }
 
